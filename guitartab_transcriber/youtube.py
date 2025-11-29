@@ -18,6 +18,10 @@ def download_youtube_audio(url: str, out_dir: Path) -> Path:
                 "preferredquality": "0",
             }
         ],
+        # Avoid reliance on a local JavaScript runtime by opting into the default
+        # player client. This suppresses yt-dlp's warning and ensures extraction
+        # works even when Node.js is unavailable.
+        "extractor_args": {"youtube": {"player_client": ["default"]}},
         "quiet": True,
     }
 
