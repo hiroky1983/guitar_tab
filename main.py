@@ -1,4 +1,5 @@
 import argparse
+import sys
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +44,7 @@ def main() -> None:
 
     except Exception as e:
         print(f"Error occurred: {e}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
