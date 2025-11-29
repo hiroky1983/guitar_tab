@@ -1,5 +1,6 @@
 import argparse
 import sys
+import shutil
 
 
 def parse_args() -> argparse.Namespace:
@@ -41,6 +42,19 @@ def main() -> None:
         # 画像として保存
         tab.to_matplotlib(args.output)
         print(f"Saved visualization to {args.output}")
+
+        # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
+        ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
+        print(f"Exported LilyPond source to {ly_file}")
+
+        lilypond_path = shutil.which("lilypond")
+        if lilypond_path:
+            svg_file = tab.to_lilypond(
+                "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
+            )
+            print(f"Generated engraved SVG via LilyPond: {svg_file}")
+        else:
+            print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
 
     except Exception as e:
         print(f"Error occurred: {e}")

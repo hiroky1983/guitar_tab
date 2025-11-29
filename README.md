@@ -12,6 +12,8 @@
 
 として利用できます。（パターン A）
 
+本ライブラリの出力責務は **LilyPond 記法（.ly）まで** で、PDF / SVG / PNG などの最終成果物は LilyPond 本体（外部ツール）が生成します。
+
 ---
 
 ## インストール
@@ -33,8 +35,7 @@ pip install -e .
 ### 外部ツール（任意）
 
 - LilyPond
-
-  - 高品質な楽譜（標準譜＋ TAB）を SVG / PNG / PDF として出力する場合に使用します。
+  - 高品質な譜面（標準譜＋ TAB）を SVG / PNG / PDF として出力する場合に使用します。
   - `tab` オブジェクトから LilyPond 記法（`.ly`）を生成し、`lilypond` コマンドでビルドする想定です。
 
 ---
@@ -47,6 +48,7 @@ pip install -e .
 
 ```python
 from guitartab_transcriber import Transcriber
+import shutil
 
 # インスタンス生成
 t = Transcriber()
@@ -65,15 +67,24 @@ print(tab.to_text())
 tab.to_matplotlib("result.png")
 print("Saved visualization to result.png")
 
+# LilyPond 記法（.ly）を書き出し（ライブラリの責務はここまで）
+ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
+print(f"Exported LilyPond source to {ly_file}")
+
+# 必要に応じて LilyPond CLI で SVG などに変換（外部ツールの責務）
+lilypond_path = shutil.which("lilypond")
+if lilypond_path:
+    svg_file = tab.to_lilypond(
+        "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
+    )
+    print(f"Generated engraved SVG via LilyPond: {svg_file}")
+else:
+    print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
+
 # --- パターンB: ローカルの音声ファイルから生成 ---
 # tab = t.transcribe("path/to/your/audio.wav")
 # print(tab.to_text())
 ```
-
-LilyPond を使った高品質な譜面出力を行いたい場合は、
-`tab` オブジェクトから LilyPond 記法（`.ly`）を生成するメソッド（例: `to_lilypond()`）を用意し、
-生成された `.ly` ファイルを `lilypond` コマンドでビルドして SVG / PNG / PDF を作成します。
-その出力ファイルを Web フロントエンド側で `<img>` / `<object>` / `<embed>` などを使って表示する想定です。
 
 ### 2. 実行
 
@@ -84,6 +95,15 @@ python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
 # 結果の画像を別ファイル名で保存したい場合
 python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID" --output my_tab.png
 ```
+
+LilyPond のビルドを行う場合は、`lilypond` コマンドがパスに通っている必要があります。
+
+### LilyPond 連携の考え方
+
+1. **ライブラリの責務**: `tab.to_lilypond()` で TAB 情報から LilyPond 記法（`.ly`）を生成する。
+2. **外部ツールの責務**: 生成した `.ly` を LilyPond コマンド（例: `lilypond --svg -o score result.ly`）でビルドし、PDF / SVG / PNG を得る。
+
+`.ly` は HTML のような「楽譜の設計図」に相当し、Web フロントエンドに埋め込む際は LilyPond が生成した `score.svg` / `score.png` / `score.pdf` を利用する想定です。
 
 - 音声は yt-dlp で一括ダウンロード（可能な限り高速）してから解析します。再生速度でストリーミングしているわけではありません。
   ダウンロード中の進捗は標準エラー出力に簡易表示されます。
