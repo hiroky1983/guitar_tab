@@ -53,7 +53,9 @@ print("Saved visualization to result.png")
 作成したスクリプトを実行します。
 
 ```bash
-python main.py
+python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
+# 結果の画像を別ファイル名で保存したい場合
+python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID" --output my_tab.png
 ```
 
 ## 機能
