@@ -57,6 +57,8 @@ python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
 # 結果の画像を別ファイル名で保存したい場合
 python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID" --output my_tab.png
 ```
+- 音声はyt-dlpで一括ダウンロード（可能な限り高速）してから解析します。再生速度でストリーミングしているわけではありません。
+  ダウンロード中の進捗は標準エラー出力に簡易表示されます。
 
 ## 機能
 
