@@ -17,6 +17,11 @@ pip install -e .
 - yt-dlp
 - matplotlib
 
+### 外部ツール（任意）
+
+- LilyPond
+  - 高品質な譜面（標準譜＋TAB）を SVG / PNG / PDF として出力する場合に使用します。
+
 ## 使い方
 
 ### 1. 実行用スクリプトの作成
@@ -43,6 +48,14 @@ print(tab.to_text())
 tab.to_svg("result.svg")
 print("Saved visualization to result.svg")
 
+# LilyPond ファイルを書き出し、SVG をビルド
+ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
+print(f"Exported LilyPond source to {ly_file}")
+
+# 環境に lilypond がインストールされていれば、そのままビルド可能
+tab.to_lilypond("result.ly", compile_output="score.svg")
+print("Built LilyPond score as score.svg")
+
 # --- パターンB: ローカルの音声ファイルから生成 ---
 # tab = t.transcribe("path/to/your/audio.wav")
 # print(tab.to_text())
@@ -56,13 +69,16 @@ print("Saved visualization to result.svg")
 python main.py
 ```
 
+LilyPond のビルドを行う場合は、`lilypond` コマンドがパスに通っている必要があります。
+
 ## 機能
 
 - 音声ファイルからの TAB 生成
 - YouTube URL からの TAB 生成
 - テキスト形式（ASCII タブ）での出力
 - JSON 形式での出力
-- Matplotlib を使用した簡易グラフ出力
+- Matplotlib を使用した簡易グラフ出力（PNG / SVG など拡張子に追従）
+- LilyPond 連携（.ly 出力＋オプションで SVG / PNG / PDF を自動ビルド）
 - 簡易的な運指決定ロジック（低音弦優先）
 
 ## 今後の予定

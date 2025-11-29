@@ -19,5 +19,11 @@ try:
     tab.to_svg("result.svg")
     print("Saved visualization to result.svg")
 
+    # LilyPond ファイルを書き出し、SVG をビルド
+    ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
+    print(f"Exported LilyPond source to {ly_file}")
+    tab.to_lilypond("result.ly", compile_output="score.svg")
+    print("Built LilyPond score as score.svg")
+
 except Exception as e:
     print(f"Error occurred: {e}")
