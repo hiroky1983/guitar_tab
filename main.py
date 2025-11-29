@@ -11,18 +11,14 @@ print(f"Transcribing from YouTube: {url}")
 try:
     tab = t.transcribe_from_youtube(url)
 
-    # 結果をコンソールに表示
-    print("\n=== TAB ===")
-    print(tab.to_text())
-
-    # PNG の代わりにSVG形式で保存
-    tab.to_svg("result.svg")
-    print("Saved visualization to result.svg")
-
-    # LilyPond 記法（.ly）を書き出し（PDF / SVG / PNG は LilyPond CLI が生成）
+    # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
     ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
     print(f"Exported LilyPond source to {ly_file}")
-    print("Run: lilypond --svg -o score result.ly  # to produce score.svg via LilyPond")
+
+    # LilyPond CLI を使って SVG を生成する場合（外部ツールの責務）
+    # スキップしたい場合は以下2行を削除してください。
+    svg_file = tab.to_lilypond("result.ly", title="Sample TAB", compile_output="score.svg")
+    print(f"Generated engraved SVG via LilyPond: {svg_file}")
 
 except Exception as e:
     print(f"Error occurred: {e}")

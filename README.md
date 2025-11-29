@@ -42,20 +42,13 @@ print(f"Transcribing from YouTube: {url}")
 
 tab = t.transcribe_from_youtube(url)
 
-# 結果をコンソールに表示
-print("\n=== TAB ===")
-print(tab.to_text())
-
-# SVG 画像として保存（PNG の代替として軽量かつ可搬性の高い形式）
-tab.to_svg("result.svg")
-print("Saved visualization to result.svg")
-
-# LilyPond 記法（.ly）を書き出し
+# LilyPond 記法（.ly）を書き出し（ライブラリの責務はここまで）
 ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
 print(f"Exported LilyPond source to {ly_file}")
 
-# 生成された .ly を LilyPond CLI でビルド（外部ツールの責務）
-# 例: lilypond --svg -o score result.ly
+# 必要に応じて LilyPond CLI で SVG などに変換（外部ツールの責務）
+svg_file = tab.to_lilypond("result.ly", title="Sample TAB", compile_output="score.svg")
+print(f"Generated engraved SVG via LilyPond: {svg_file}")
 
 # --- パターンB: ローカルの音声ファイルから生成 ---
 # tab = t.transcribe("path/to/your/audio.wav")
