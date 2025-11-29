@@ -1,30 +1,65 @@
+import argparse
+import sys
 import shutil
 
-from guitartab_transcriber import Transcriber
 
-# インスタンス生成
-t = Transcriber()
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Transcribe guitar tabs from a YouTube URL.")
+    parser.add_argument(
+        "--url",
+        "-u",
+        required=True,
+        help="YouTube video URL to transcribe",
+    )
+    parser.add_argument(
+        "--output",
+        "-o",
+        default="result.png",
+        help="Path to save the generated tab visualization",
+    )
+    return parser.parse_args()
 
-# --- パターンA: YouTubeから生成 ---
-# テスト用動画: "THIS RIFF IS CRAZY #shorts" (ID: 3BoF2TROWjs)
-url = "https://www.youtube.com/watch?v=3BoF2TROWjs"
-print(f"Transcribing from YouTube: {url}")
 
-try:
-    tab = t.transcribe_from_youtube(url)
+def main() -> None:
+    args = parse_args()
 
-    # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
-    ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
-    print(f"Exported LilyPond source to {ly_file}")
+    from guitartab_transcriber import Transcriber
 
-    lilypond_path = shutil.which("lilypond")
-    if lilypond_path:
-        svg_file = tab.to_lilypond(
-            "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
-        )
-        print(f"Generated engraved SVG via LilyPond: {svg_file}")
-    else:
-        print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
+    # インスタンス生成
+    t = Transcriber()
 
-except Exception as e:
-    print(f"Error occurred: {e}")
+    # --- パターンA: YouTubeから生成 ---
+    url = args.url
+    print(f"Transcribing from YouTube: {url}")
+
+    try:
+        tab = t.transcribe_from_youtube(url)
+
+        # 結果をコンソールに表示
+        print("\n=== TAB ===")
+        print(tab.to_text())
+
+        # 画像として保存
+        tab.to_matplotlib(args.output)
+        print(f"Saved visualization to {args.output}")
+
+        # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
+        ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
+        print(f"Exported LilyPond source to {ly_file}")
+
+        lilypond_path = shutil.which("lilypond")
+        if lilypond_path:
+            svg_file = tab.to_lilypond(
+                "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
+            )
+            print(f"Generated engraved SVG via LilyPond: {svg_file}")
+        else:
+            print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
+
+    except Exception as e:
+        print(f"Error occurred: {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
