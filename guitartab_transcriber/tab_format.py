@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -172,6 +173,12 @@ class TabResult:
             raise ValueError("compile_output must end with .svg, .png, or .pdf")
 
         output_stem = str(compile_path.with_suffix(""))
+
+        if shutil.which(lilypond_executable) is None:
+            raise FileNotFoundError(
+                f"LilyPond executable '{lilypond_executable}' not found in PATH; "
+                "install LilyPond or update the executable path."
+            )
 
         subprocess.run(
             [lilypond_executable, *format_flag, "-o", output_stem, str(ly_path)],

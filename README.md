@@ -32,6 +32,7 @@ pip install -e .
 
 ```python
 from guitartab_transcriber import Transcriber
+import shutil
 
 # インスタンス生成
 t = Transcriber()
@@ -47,8 +48,14 @@ ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
 print(f"Exported LilyPond source to {ly_file}")
 
 # 必要に応じて LilyPond CLI で SVG などに変換（外部ツールの責務）
-svg_file = tab.to_lilypond("result.ly", title="Sample TAB", compile_output="score.svg")
-print(f"Generated engraved SVG via LilyPond: {svg_file}")
+lilypond_path = shutil.which("lilypond")
+if lilypond_path:
+    svg_file = tab.to_lilypond(
+        "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
+    )
+    print(f"Generated engraved SVG via LilyPond: {svg_file}")
+else:
+    print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
 
 # --- パターンB: ローカルの音声ファイルから生成 ---
 # tab = t.transcribe("path/to/your/audio.wav")

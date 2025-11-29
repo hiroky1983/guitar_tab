@@ -1,3 +1,5 @@
+import shutil
+
 from guitartab_transcriber import Transcriber
 
 # インスタンス生成
@@ -15,10 +17,14 @@ try:
     ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
     print(f"Exported LilyPond source to {ly_file}")
 
-    # LilyPond CLI を使って SVG を生成する場合（外部ツールの責務）
-    # スキップしたい場合は以下2行を削除してください。
-    svg_file = tab.to_lilypond("result.ly", title="Sample TAB", compile_output="score.svg")
-    print(f"Generated engraved SVG via LilyPond: {svg_file}")
+    lilypond_path = shutil.which("lilypond")
+    if lilypond_path:
+        svg_file = tab.to_lilypond(
+            "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
+        )
+        print(f"Generated engraved SVG via LilyPond: {svg_file}")
+    else:
+        print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
 
 except Exception as e:
     print(f"Error occurred: {e}")
