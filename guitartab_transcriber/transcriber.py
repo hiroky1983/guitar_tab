@@ -1,3 +1,5 @@
+import contextlib
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Optional, List
@@ -52,10 +54,17 @@ class Transcriber:
 
         # predict returns: model_output, midi_data, note_events
         # note_events is a list of (start, end, pitch, amplitude, pitch_bends)
-        _, _, note_events = predict(
-            str(audio_path),
-            model_or_model_path=ICASSP_2022_MODEL_PATH,
-        )
+        #
+        # basic_pitch can emit verbose debug information to stdout/stderr. Redirect
+        # both streams during inference to keep CLI output focused on the tab
+        # results.
+        with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(
+            devnull
+        ), contextlib.redirect_stderr(devnull):
+            _, _, note_events = predict(
+                str(audio_path),
+                model_or_model_path=ICASSP_2022_MODEL_PATH,
+            )
 
         notes: List[Note] = []
         for start, end, pitch, velocity, _ in note_events:
