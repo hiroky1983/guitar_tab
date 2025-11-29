@@ -129,7 +129,8 @@ class TabResult:
         lilypond_executable: str = "lilypond",
     ) -> Path:
         """
-        LilyPond ファイル（.ly）を書き出し、必要に応じて SVG / PNG / PDF を生成する。
+        TAB から LilyPond 記法（.ly）を生成する。`compile_output` を指定した場合のみ、
+        外部ツールの LilyPond CLI を呼び出して PDF / SVG / PNG をビルドする（外部依存）。
 
         Parameters
         ----------
@@ -138,9 +139,9 @@ class TabResult:
         title: str
             スコアのタイトル。
         compile_output: str | Path, optional
-            `None` の場合は .ly ファイルを書き出すだけ。
+            `None` の場合は .ly ファイルを書き出すだけ（ライブラリの責務）。
             `"score.svg"` のようにファイル名を指定すると、拡張子に応じて LilyPond を実行し
-            SVG / PNG / PDF を生成する。
+            SVG / PNG / PDF を生成する（LilyPond 本体が担当）。
         lilypond_executable: str
             実行する lilypond コマンド名。
         """
