@@ -13,6 +13,11 @@ print(f"Transcribing from YouTube: {url}")
 try:
     tab = t.transcribe_from_youtube(url)
 
+    # デバッグ: 最初の5イベントを表示
+    print(f"\nTotal events: {len(tab.events)}")
+    for i, e in enumerate(tab.events[:5]):
+        print(f"Event {i}: string={e.string}, fret={e.fret}, start={e.start:.2f}, end={e.end:.2f}")
+
     # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
     ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
     print(f"Exported LilyPond source to {ly_file}")

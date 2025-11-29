@@ -219,7 +219,8 @@ class TabResult:
         def midi_to_pitch(midi: int) -> str:
             note_names = ["c", "cis", "d", "ees", "e", "f", "fis", "g", "gis", "a", "bes", "b"]
             name = note_names[midi % 12]
-            octave = (midi - 60) // 12
+            # LilyPondの 'c' は C3 (MIDI 48)
+            octave = (midi - 48) // 12
             if octave > 0:
                 return name + "'" * octave
             if octave < 0:
@@ -236,6 +237,11 @@ class TabResult:
                 tokens.append(f"r{quantize_duration(gap_beats)}")
 
             pitch = open_strings[event.string] + event.fret
+            
+            # ギター音域外の音をスキップ（MIDI 40-88）
+            if pitch < 40 or pitch > 88:
+                continue
+                
             duration_beats = max(event.end - event.start, 0.0) * beats_per_second
             tokens.append(f"{midi_to_pitch(pitch)}{quantize_duration(duration_beats)}\\{event.string}")
 
