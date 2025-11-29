@@ -39,9 +39,9 @@ tab = t.transcribe_from_youtube(url)
 print("\n=== TAB ===")
 print(tab.to_text())
 
-# 画像として保存
-tab.to_matplotlib("result.png")
-print("Saved visualization to result.png")
+# SVG 画像として保存（PNG の代替として軽量かつ可搬性の高い形式）
+tab.to_svg("result.svg")
+print("Saved visualization to result.svg")
 
 # --- パターンB: ローカルの音声ファイルから生成 ---
 # tab = t.transcribe("path/to/your/audio.wav")

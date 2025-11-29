@@ -15,9 +15,9 @@ try:
     print("\n=== TAB ===")
     print(tab.to_text())
 
-    # 画像として保存
-    tab.to_matplotlib("result.png")
-    print("Saved visualization to result.png")
+    # PNG の代わりにSVG形式で保存
+    tab.to_svg("result.svg")
+    print("Saved visualization to result.svg")
 
 except Exception as e:
     print(f"Error occurred: {e}")

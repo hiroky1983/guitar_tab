@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
 
 @dataclass
@@ -102,7 +103,16 @@ class TabResult:
         plt.tight_layout()
 
         if save_path:
-            plt.savefig(save_path)
+            file_suffix = Path(save_path).suffix.lower()
+            # matplotlib は拡張子で自動判別するが、明示的な format 指定も許可
+            fmt = file_suffix.lstrip(".") if file_suffix else None
+            plt.savefig(save_path, format=fmt)
             plt.close(fig)
         else:
             plt.show()
+
+    def to_svg(self, save_path: str = "result.svg"):
+        """
+        PNG ではなく SVG 形式でTABを出力したい場合のヘルパー。
+        """
+        self.to_matplotlib(save_path=save_path)
