@@ -97,30 +97,47 @@ class Transcriber:
         }
 
         tab_events: list[dict] = []
+        
+        # 運指決定のための状態変数
+        # 初期位置はローポジション（例: 5フレット付近）を想定、あるいは0
+        current_hand_pos = 0
 
         for n in notes:
-            best_string = None
-            best_fret = None
+            possible_positions = []
 
+            # 1. この音が弾けるすべてのポジションを列挙
             for s, open_pitch in open_strings.items():
                 fret = n.pitch - open_pitch
-                if 0 <= fret <= 20:  # 一旦20フレットまでとしておく
-                    # 「できるだけ太い弦（番号が大きい）を優先」する例
-                    if best_string is None or s > best_string:
-                        best_string = s
-                        best_fret = fret
+                if 0 <= fret <= 20:  # 20フレットまで
+                    possible_positions.append({"string": s, "fret": fret})
 
-            if best_string is None:
-                # どの弦でも弾けない → スキップ
+            if not possible_positions:
                 continue
 
+            # 2. 最適なポジションを選択
+            # コスト関数: abs(フレット - 現在の手の位置) が小さいものを選ぶ
+            # 同じフレット距離なら、弦の移動が少ない方や、特定の弦を優先するなどの重み付けも可能だが、
+            # まずはシンプルに「フレット移動距離の最小化」を行う。
+            
+            def calculate_cost(pos):
+                fret_distance = abs(pos["fret"] - current_hand_pos)
+                # オプション: 開放弦(0フレット)は移動コストを低く見積もるなどの調整も可
+                return fret_distance
+
+            best_pos = min(possible_positions, key=calculate_cost)
+
+            # 選んだポジションを採用
             tab_events.append(
                 {
-                    "string": best_string,
-                    "fret": best_fret,
+                    "string": best_pos["string"],
+                    "fret": best_pos["fret"],
                     "start": n.start,
                     "end": n.end,
                 }
             )
+            
+            # 手の位置を更新（ただし開放弦の場合は手の位置を変えない、などの工夫もアリだが一旦単純更新）
+            if best_pos["fret"] > 0:
+                current_hand_pos = best_pos["fret"]
 
         return tab_events

@@ -228,13 +228,47 @@ class TabResult:
             return name
 
         tokens: list[str] = []
-        previous_end = 0.0
+        # 16分音符を最小単位とする (0.25拍)
+        QUANTIZE_GRID = 0.25
+
+        def quantize_beats(beats: float) -> float:
+            """拍数をグリッドに吸着させる"""
+            return round(beats / QUANTIZE_GRID) * QUANTIZE_GRID
+
+        tokens: list[str] = []
+        # 最初の音の開始位置まで休符を入れるための基準点
+        previous_end_beats = 0.0
 
         for event in events:
-            gap_seconds = max(event.start - previous_end, 0.0)
-            gap_beats = gap_seconds * beats_per_second
-            if gap_beats > 0.05:
-                tokens.append(f"r{quantize_duration(gap_beats)}")
+            # 時間(秒)を拍数に変換
+            start_beats = event.start * beats_per_second
+            end_beats = event.end * beats_per_second
+            
+            # グリッドに吸着
+            q_start = quantize_beats(start_beats)
+            q_end = quantize_beats(end_beats)
+            
+            # 音価が0になってしまった場合は最低長さを確保
+            if q_end <= q_start:
+                q_end = q_start + QUANTIZE_GRID
+
+            # 前の音との隙間（休符）を計算
+            gap = q_start - previous_end_beats
+            
+            # 隙間がマイナス（重なり）の場合は補正
+            if gap < 0:
+                # 重なっている場合、前の音を短くするか、今の音を後ろにずらすなどの処理が必要だが
+                # ここでは簡易的に今の音の開始をずらす（単音TABの簡易処理）
+                q_start = previous_end_beats
+                if q_end <= q_start:
+                    q_end = q_start + QUANTIZE_GRID
+                gap = 0
+
+            # 隙間がある場合、休符を追加
+            if gap > 0:
+                # gapが非常に小さい場合（例えばグリッド1個分など）は休符を入れる
+                # ここでは単純に gap 分の休符を入れる
+                tokens.append(f"r{quantize_duration(gap)}")
 
             pitch = open_strings[event.string] + event.fret
             
@@ -242,10 +276,10 @@ class TabResult:
             if pitch < 40 or pitch > 88:
                 continue
                 
-            duration_beats = max(event.end - event.start, 0.0) * beats_per_second
-            tokens.append(f"{midi_to_pitch(pitch)}{quantize_duration(duration_beats)}\\{event.string}")
+            duration = q_end - q_start
+            tokens.append(f"{midi_to_pitch(pitch)}{quantize_duration(duration)}\\{event.string}")
 
-            previous_end = max(previous_end, event.end)
+            previous_end_beats = q_end
 
         token_lines: list[str] = []
         line: list[str] = []
