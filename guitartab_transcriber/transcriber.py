@@ -121,15 +121,18 @@ class Transcriber:
         # basic_pitch can emit verbose debug information to stdout/stderr. Redirect
         # both streams during inference to keep CLI output focused on the tab
         # results.
+        # basic_pitch can emit verbose debug information to stdout/stderr. Redirect
+        # both streams during inference to keep CLI output focused on the tab
+        # results.
         with open(os.devnull, "w") as devnull, contextlib.redirect_stdout(
             devnull
         ), contextlib.redirect_stderr(devnull):
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.6,       # デフォルト0.5 -> 0.6: アタックを厳しく判定
-                frame_threshold=0.4,       # デフォルト0.3 -> 0.4: 音の持続を厳しく判定
-                minimum_note_length=80.0,  # デフォルト58ms -> 80ms: 短いノイズを無視
+                onset_threshold=0.5,       # 0.6 -> 0.5: 標準に戻す（拾い漏れ防止）
+                frame_threshold=0.3,       # 0.4 -> 0.3: 標準に戻す
+                minimum_note_length=50.0,  # 80ms -> 50ms: 速いパッセージに対応
             )
 
         # BPM推定 (librosa)
@@ -151,23 +154,89 @@ class Transcriber:
                     velocity=float(velocity),
                 )
             )
+            
+        # 時間順にソート
+        notes.sort(key=lambda n: n.start)
+
+        # デバッグ: 最初の10音を表示
+        print("\n--- First 10 detected notes (Sorted) ---")
+        for i, n in enumerate(notes[:10]):
+            print(f"Note {i}: Start={n.start:.3f}, Pitch={n.pitch}, Vel={n.velocity:.2f}")
+        print("-------------------------------------\n")
+            
         return notes, float(estimated_bpm)
 
     def _filter_notes(self, notes: List[Note]) -> List[Note]:
         """
         AIが検出したノートからノイズを除去し、ギターらしい演奏に整理する。
+        特に「倍音ノイズ」の除去に注力する。
         """
-        filtered = []
-        for n in notes:
+        # 1. 時間順にソート
+        notes.sort(key=lambda n: n.start)
+        
+        # 2. グループ化（同時発音）
+        groups = []
+        if not notes:
+            return []
+            
+        current_group = [notes[0]]
+        for i in range(1, len(notes)):
+            if abs(notes[i].start - current_group[0].start) < 0.05:
+                current_group.append(notes[i])
+            else:
+                groups.append(current_group)
+                current_group = [notes[i]]
+        groups.append(current_group)
+        
+        filtered_notes = []
+        
+        for group in groups:
+            if len(group) == 1:
+                filtered_notes.append(group[0])
+                continue
+                
+            # 倍音除去ロジック
+            # 低い音順にソート
+            group.sort(key=lambda n: n.pitch)
+            
+            kept_notes = []
+            # 一番低い音は（ベース音として）必ず残す
+            root = group[0]
+            kept_notes.append(root)
+            
+            for i in range(1, len(group)):
+                note = group[i]
+                is_harmonic = False
+                
+                # ルート音との比較
+                interval = note.pitch - root.pitch
+                
+                # オクターブ (12, 24) や 完全5度 (7, 19) は倍音の可能性が高い
+                # 特に音量がルートより小さい場合はノイズとみなす
+                if interval in [12, 24, 7, 19]:
+                    if note.velocity < root.velocity * 0.8: # ルートより明らかに弱い
+                        is_harmonic = True
+                
+                # 3度 (4, 16) も歪みで出やすいが、和音の構成音かもしれないので慎重に
+                # ここでは「非常に弱い」場合のみ消す
+                if interval in [4, 16]:
+                    if note.velocity < root.velocity * 0.5:
+                        is_harmonic = True
+
+                if not is_harmonic:
+                    kept_notes.append(note)
+            
+            filtered_notes.extend(kept_notes)
+
+        # 3. 最終的なゴミ掃除
+        final_result = []
+        for n in filtered_notes:
             duration = n.end - n.start
-            # predict側でも制限しているが、念のため
-            if duration < 0.05:
-                continue
-            # 高音ノイズ除去 (MIDI 72=C5以上 かつ velocityが低い)
-            if n.pitch > 72 and n.velocity < 0.3:
-                continue
-            filtered.append(n)
-        return filtered
+            if duration < 0.05: continue
+            if n.pitch > 75 and n.velocity < 0.3: continue # 超高音ノイズ
+            final_result.append(n)
+            
+        return final_result
 
     def _notes_to_guitar_positions(self, notes: List[Note]) -> list[dict]:
         """
@@ -175,6 +244,14 @@ class Transcriber:
         ここはMVP用に「一番低い弦で弾けるポジションを選ぶ」だけの簡易版。
         チューニングや運指最適化は今後拡張。
         """
+        if not notes:
+            return []
+
+        # リズム補正: 最初の音を 0.0秒（小節の頭）に合わせる
+        # これにより、曲の開始位置によるズレを解消する
+        first_start = notes[0].start
+        print(f"Shifting all notes by -{first_start:.3f}s to align start.")
+        
         # E標準の開放弦のMIDI: 6弦E2=40, 5弦A2=45, 4弦D3=50, 3弦G3=55, 2弦B3=59, 1弦E4=64
         open_strings = {
             6: 40,
@@ -192,6 +269,13 @@ class Transcriber:
         current_hand_pos = 0
 
         for n in notes:
+            # 時間シフト
+            shifted_start = n.start - first_start
+            shifted_end = n.end - first_start
+            
+            if shifted_start < 0: shifted_start = 0
+            if shifted_end < 0: shifted_end = 0.1
+
             possible_positions = []
 
             # 1. この音が弾けるすべてのポジションを列挙
@@ -215,10 +299,6 @@ class Transcriber:
                     fret_dist = 0
                 else:
                     # 現在の手の位置との距離
-                    # ただし、current_hand_pos が 0 の場合（直前が開放弦だった場合）、
-                    # そのさらに前の「押弦していた位置」を基準にするのが理想だが、
-                    # ここではシンプルに「0からの距離」になってしまうのを防ぐため、
-                    # 0の場合は「移動なし」とみなすか、あるいはデフォルト位置（例えば5フレット）との距離にする
                     if current_hand_pos == 0:
                         fret_dist = 0 # 簡易的にコスト0とする
                     else:
@@ -231,10 +311,6 @@ class Transcriber:
                 if fret > 12:
                     high_fret_penalty = (fret - 12) * 2
                 
-                # 3. 弦の優先度（オプション）
-                # 低音弦（太い弦）の方が太い音がしてギターらしい場合が多いが、
-                # ここではフレット移動のしやすさを最優先する
-                
                 return fret_dist + high_fret_penalty
 
             best_pos = min(possible_positions, key=calculate_cost)
@@ -244,8 +320,8 @@ class Transcriber:
                 {
                     "string": best_pos["string"],
                     "fret": best_pos["fret"],
-                    "start": n.start,
-                    "end": n.end,
+                    "start": shifted_start,
+                    "end": shifted_end,
                 }
             )
             

@@ -235,27 +235,12 @@ class TabResult:
         
         def quantize_beats(beats: float) -> float:
             """
-            拍数を音楽的なグリッド（16分音符、3連符など）に吸着させる。
+            拍数を音楽的なグリッドに吸着させる。
+            リズムを安定させるため、強制的に「16分音符 (0.25)」グリッドのみを使用する。
+            3連符などは一旦除外。
             """
-            # 候補となるグリッド間隔
-            grids = [
-                0.25,       # 16分音符
-                1.0 / 3.0,  # 3連符 (1拍3連)
-                1.0 / 6.0,  # 6連符
-                0.125,      # 32分音符
-            ]
-            
-            best_q = beats
-            min_error = float("inf")
-            
-            for grid in grids:
-                q = round(beats / grid) * grid
-                error = abs(beats - q)
-                if error < min_error:
-                    min_error = error
-                    best_q = q
-            
-            return best_q
+            grid = 0.25
+            return round(beats / grid) * grid
 
         # 1. 全イベントを量子化し、開始時刻でグループ化（和音対応）
         quantized_events = []
@@ -277,6 +262,19 @@ class TabResult:
             
         # 開始時刻でソート
         quantized_events.sort(key=lambda x: x["start"])
+        
+        # 隙間埋め（Legato化）
+        # ロックのリフでは音を繋げて弾くことが多いので、短い隙間は埋める
+        for i in range(len(quantized_events) - 1):
+            curr = quantized_events[i]
+            next_evt = quantized_events[i+1]
+            
+            gap = next_evt["start"] - curr["end"]
+            
+            # 隙間があり、かつそれが大きすぎない（1拍未満）場合
+            if 0 < gap < 1.0:
+                # 前の音を伸ばす
+                curr["end"] = next_evt["start"]
         
         # 同じ開始時刻のイベントをまとめる
         grouped_events = []
@@ -306,14 +304,29 @@ class TabResult:
             # 前の音との隙間（休符）
             gap = start_beats - previous_end_beats
             
-            if gap < -0.01:
-                # 重なっている場合（ポリフォニックな動き）
-                # 本格的な対応は声部（Voice）を分ける必要があるが、
-                # ここでは簡易的に「前の音を短くする」か「今の音を後ろにずらす」
-                # 今回は前の音の長さを調整できないので、gap=0として扱う（実質無視）
-                gap = 0
+            # ロックのリフでは、短い休符はノイズや検出漏れの可能性が高いので、
+            # 前の音を伸ばして埋めてしまう（レガート化）
+            # ただし、長すぎる休符（1拍以上など）は意図的なブレイクとして残す
+            if 0 < gap < 1.0:
+                # 前のトークン（音符）を探して、長さを修正するのは難しいので、
+                # ここでは「休符を出力しない」ことで対応するが、
+                # LilyPondは時間を厳密に管理するので、gapを埋めるための「見えない音」か
+                # あるいは前の音の長さを計算し直す必要がある。
+                
+                # 簡易的なアプローチ:
+                # gapが小さいなら、今回の音の開始位置を前にずらす（食わせる）ことはできない（順序が変わるため）
+                # なので、「休符トークンを追加しない」だけでは時間がズレてしまう。
+                
+                # 正しいアプローチ:
+                # quantized_events の時点で、前の音の end を次の音の start まで伸ばしておくべき。
+                pass
             
             if gap > 0.05:
+                # ここで休符を入れるかどうか判定
+                # 16分音符(0.25)以上の隙間なら休符を入れるが、
+                # 今回は「休符NG」という要望なので、極力埋めたい。
+                # しかし、ここで埋める処理をするより、前段の quantized_events 作成時に
+                # 「隙間を埋める」処理をした方が安全。
                 tokens.append(f"r{quantize_duration(gap)}")
             
             # 音価
