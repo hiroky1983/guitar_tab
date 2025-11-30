@@ -39,10 +39,6 @@ def main() -> None:
         print("\n=== TAB ===")
         print(tab.to_text())
 
-        # 画像として保存
-        tab.to_matplotlib(args.output)
-        print(f"Saved visualization to {args.output}")
-
         # LilyPond 記法（.ly）を書き出し（ここまでがライブラリの責務）
         ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
         print(f"Exported LilyPond source to {ly_file}")

@@ -228,58 +228,121 @@ class TabResult:
             return name
 
         tokens: list[str] = []
-        # 16分音符を最小単位とする (0.25拍)
-        QUANTIZE_GRID = 0.25
-
+        # 量子化の最小単位（1拍を何分割するか）
+        # 4: 16分音符, 3: 3連符, 6: 6連符
+        # ここでは 12 (3と4の公倍数) を基準に考えると計算しやすいが、
+        # シンプルに「最も近いグリッド」を選ぶ方式にする。
+        
         def quantize_beats(beats: float) -> float:
-            """拍数をグリッドに吸着させる"""
-            return round(beats / QUANTIZE_GRID) * QUANTIZE_GRID
+            """
+            拍数を音楽的なグリッド（16分音符、3連符など）に吸着させる。
+            """
+            # 候補となるグリッド間隔
+            grids = [
+                0.25,       # 16分音符
+                1.0 / 3.0,  # 3連符 (1拍3連)
+                1.0 / 6.0,  # 6連符
+                0.125,      # 32分音符
+            ]
+            
+            best_q = beats
+            min_error = float("inf")
+            
+            for grid in grids:
+                q = round(beats / grid) * grid
+                error = abs(beats - q)
+                if error < min_error:
+                    min_error = error
+                    best_q = q
+            
+            return best_q
 
-        tokens: list[str] = []
-        # 最初の音の開始位置まで休符を入れるための基準点
-        previous_end_beats = 0.0
-
+        # 1. 全イベントを量子化し、開始時刻でグループ化（和音対応）
+        quantized_events = []
         for event in events:
-            # 時間(秒)を拍数に変換
             start_beats = event.start * beats_per_second
             end_beats = event.end * beats_per_second
             
-            # グリッドに吸着
             q_start = quantize_beats(start_beats)
             q_end = quantize_beats(end_beats)
             
-            # 音価が0になってしまった場合は最低長さを確保
             if q_end <= q_start:
-                q_end = q_start + QUANTIZE_GRID
-
-            # 前の音との隙間（休符）を計算
-            gap = q_start - previous_end_beats
+                q_end = q_start + 0.125 # 最低長
             
-            # 隙間がマイナス（重なり）の場合は補正
-            if gap < 0:
-                # 重なっている場合、前の音を短くするか、今の音を後ろにずらすなどの処理が必要だが
-                # ここでは簡易的に今の音の開始をずらす（単音TABの簡易処理）
-                q_start = previous_end_beats
-                if q_end <= q_start:
-                    q_end = q_start + QUANTIZE_GRID
+            quantized_events.append({
+                "start": q_start,
+                "end": q_end,
+                "event": event
+            })
+            
+        # 開始時刻でソート
+        quantized_events.sort(key=lambda x: x["start"])
+        
+        # 同じ開始時刻のイベントをまとめる
+        grouped_events = []
+        if quantized_events:
+            current_group = [quantized_events[0]]
+            for i in range(1, len(quantized_events)):
+                prev = current_group[-1]
+                curr = quantized_events[i]
+                
+                # 開始時刻がほぼ同じなら同じグループ（和音）とみなす
+                if abs(curr["start"] - prev["start"]) < 0.01:
+                    current_group.append(curr)
+                else:
+                    grouped_events.append(current_group)
+                    current_group = [curr]
+            grouped_events.append(current_group)
+
+        tokens: list[str] = []
+        previous_end_beats = 0.0
+
+        for group in grouped_events:
+            # グループ内の代表時刻（すべて同じはず）
+            start_beats = group[0]["start"]
+            # 終了時刻はグループ内で最大のものを選ぶ（和音全体の長さ）
+            end_beats = max(e["end"] for e in group)
+            
+            # 前の音との隙間（休符）
+            gap = start_beats - previous_end_beats
+            
+            if gap < -0.01:
+                # 重なっている場合（ポリフォニックな動き）
+                # 本格的な対応は声部（Voice）を分ける必要があるが、
+                # ここでは簡易的に「前の音を短くする」か「今の音を後ろにずらす」
+                # 今回は前の音の長さを調整できないので、gap=0として扱う（実質無視）
                 gap = 0
-
-            # 隙間がある場合、休符を追加
-            if gap > 0:
-                # gapが非常に小さい場合（例えばグリッド1個分など）は休符を入れる
-                # ここでは単純に gap 分の休符を入れる
-                tokens.append(f"r{quantize_duration(gap)}")
-
-            pitch = open_strings[event.string] + event.fret
             
-            # ギター音域外の音をスキップ（MIDI 40-88）
-            if pitch < 40 or pitch > 88:
+            if gap > 0.05:
+                tokens.append(f"r{quantize_duration(gap)}")
+            
+            # 音価
+            duration = end_beats - start_beats
+            dur_str = quantize_duration(duration)
+            
+            # 音符の生成
+            # 和音かどうかで分岐
+            valid_notes = []
+            for item in group:
+                e = item["event"]
+                pitch = open_strings[e.string] + e.fret
+                if 40 <= pitch <= 88:
+                    valid_notes.append((pitch, e.string))
+            
+            if not valid_notes:
                 continue
                 
-            duration = q_end - q_start
-            tokens.append(f"{midi_to_pitch(pitch)}{quantize_duration(duration)}\\{event.string}")
+            if len(valid_notes) == 1:
+                # 単音
+                p, s = valid_notes[0]
+                tokens.append(f"{midi_to_pitch(p)}{dur_str}\\{s}")
+            else:
+                # 和音 < c e g >4 のような形式
+                # TAB譜では弦指定が必要: < c\5 e\4 g\3 >4
+                chord_content = " ".join([f"{midi_to_pitch(p)}\\{s}" for p, s in valid_notes])
+                tokens.append(f"<{chord_content}>{dur_str}")
 
-            previous_end_beats = q_end
+            previous_end_beats = end_beats
 
         token_lines: list[str] = []
         line: list[str] = []

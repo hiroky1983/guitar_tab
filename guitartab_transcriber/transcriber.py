@@ -115,14 +115,38 @@ class Transcriber:
                 continue
 
             # 2. 最適なポジションを選択
-            # コスト関数: abs(フレット - 現在の手の位置) が小さいものを選ぶ
-            # 同じフレット距離なら、弦の移動が少ない方や、特定の弦を優先するなどの重み付けも可能だが、
-            # まずはシンプルに「フレット移動距離の最小化」を行う。
+            # コスト関数: 人間が弾きやすい運指を選ぶ
             
             def calculate_cost(pos):
-                fret_distance = abs(pos["fret"] - current_hand_pos)
-                # オプション: 開放弦(0フレット)は移動コストを低く見積もるなどの調整も可
-                return fret_distance
+                fret = pos["fret"]
+                
+                # 1. フレット移動コスト
+                # 開放弦(0)はどこからでもアクセスしやすいので移動コストを低く（0）みなす
+                if fret == 0:
+                    fret_dist = 0
+                else:
+                    # 現在の手の位置との距離
+                    # ただし、current_hand_pos が 0 の場合（直前が開放弦だった場合）、
+                    # そのさらに前の「押弦していた位置」を基準にするのが理想だが、
+                    # ここではシンプルに「0からの距離」になってしまうのを防ぐため、
+                    # 0の場合は「移動なし」とみなすか、あるいはデフォルト位置（例えば5フレット）との距離にする
+                    if current_hand_pos == 0:
+                        fret_dist = 0 # 簡易的にコスト0とする
+                    else:
+                        fret_dist = abs(fret - current_hand_pos)
+
+                # 2. ハイフレットペナルティ
+                # 基本的にローポジション〜ミドルポジションを優先する
+                # 12フレットを超えるとペナルティを付与
+                high_fret_penalty = 0
+                if fret > 12:
+                    high_fret_penalty = (fret - 12) * 2
+                
+                # 3. 弦の優先度（オプション）
+                # 低音弦（太い弦）の方が太い音がしてギターらしい場合が多いが、
+                # ここではフレット移動のしやすさを最優先する
+                
+                return fret_dist + high_fret_penalty
 
             best_pos = min(possible_positions, key=calculate_cost)
 
@@ -136,7 +160,8 @@ class Transcriber:
                 }
             )
             
-            # 手の位置を更新（ただし開放弦の場合は手の位置を変えない、などの工夫もアリだが一旦単純更新）
+            # 手の位置を更新
+            # 開放弦の場合は手の位置（ポジション）を変えない
             if best_pos["fret"] > 0:
                 current_hand_pos = best_pos["fret"]
 
