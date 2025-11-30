@@ -17,6 +17,12 @@ def parse_args() -> argparse.Namespace:
         default="result.png",
         help="Path to save the generated tab visualization",
     )
+    parser.add_argument(
+        "--bpm",
+        type=float,
+        default=None,
+        help="Manually specify BPM (overrides estimation)",
+    )
     return parser.parse_args()
 
 
@@ -33,7 +39,7 @@ def main() -> None:
     print(f"Transcribing from YouTube: {url}")
 
     try:
-        tab = t.transcribe_from_youtube(url)
+        tab = t.transcribe_from_youtube(url, bpm=args.bpm)
 
         # 結果をコンソールに表示
         print("\n=== TAB ===")

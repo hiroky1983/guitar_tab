@@ -25,26 +25,89 @@ class Transcriber:
 
     # === 公開API ===
 
-    def transcribe(self, audio_path: str | Path) -> TabResult:
+    def transcribe(self, audio_path: str | Path, bpm: Optional[float] = None) -> TabResult:
         audio_path = Path(audio_path)
-        notes = self._transcribe_to_notes(audio_path)
-        tab_events = self._notes_to_guitar_positions(notes)
-        return TabResult.from_tab_events(tab_events)
+        
+        # 音源分離（ギターパートの抽出）
+        print("Separating audio sources (this may take a while)...")
+        guitar_audio_path = self._separate_audio(audio_path)
+        print(f"Using separated audio: {guitar_audio_path}")
+        
+        # デバッグ用に分離された音声を保存
+        debug_path = Path("debug_guitar.wav")
+        import shutil
+        shutil.copy(guitar_audio_path, debug_path)
+        print(f"Saved separated guitar audio to: {debug_path.absolute()}")
 
-    def transcribe_from_youtube(self, url: str) -> TabResult:
+        notes, estimated_bpm = self._transcribe_to_notes(guitar_audio_path)
+        
+        # 指定されたBPMがあれば優先、なければ推定値を使用
+        final_bpm = bpm if bpm is not None else estimated_bpm
+        print(f"Final BPM: {final_bpm}")
+
+        # ノイズ除去（最低限のフィルタのみ残す）
+        notes = self._filter_notes(notes)
+        events = self._notes_to_guitar_positions(notes)
+        return TabResult.from_tab_events(events, bpm=final_bpm)
+
+    def transcribe_from_youtube(self, url: str, bpm: Optional[float] = None) -> TabResult:
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmpdir:
             audio_path = download_youtube_audio(url, Path(tmpdir))
-            return self.transcribe(audio_path)
+            return self.transcribe(audio_path, bpm=bpm)
 
     # === 内部実装 ===
+    
+    def _separate_audio(self, audio_path: Path) -> Path:
+        """
+        Demucsを使って音源分離を行い、ギターが含まれる 'other' トラックのパスを返す。
+        """
+        import subprocess
+        import shutil
+        
+        # 出力ディレクトリ
+        out_dir = audio_path.parent / "separated"
+        
+        # demucsコマンドの実行
+        # -n htdemucs: 高性能モデル
+        # --two-stems=other: other（ギター含む）とそれ以外に分ける（高速化）
+        cmd = [
+            "demucs",
+            "-n", "htdemucs",
+            "--two-stems", "other",
+            "-o", str(out_dir),
+            str(audio_path)
+        ]
+        
+        # demucsがインストールされているか確認
+        if shutil.which("demucs") is None:
+            print("Warning: 'demucs' command not found. Skipping separation.")
+            return audio_path
+
+        try:
+            subprocess.run(cmd, check=True, capture_output=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Demucs failed: {e.stderr.decode()}")
+            print("Skipping separation and using original audio.")
+            return audio_path
+            
+        # 生成されたファイルのパス
+        # separated/htdemucs/{filename}/other.wav
+        track_name = audio_path.stem
+        separated_path = out_dir / "htdemucs" / track_name / "other.wav"
+        
+        if separated_path.exists():
+            return separated_path
+        else:
+            print(f"Separated file not found at {separated_path}. Using original.")
+            return audio_path
 
     def _load_audio(self, audio_path: Path):
         y, sr = librosa.load(audio_path, sr=self.config.sample_rate, mono=True)
         return y, sr
 
-    def _transcribe_to_notes(self, audio_path: Path) -> List[Note]:
+    def _transcribe_to_notes(self, audio_path: Path) -> tuple[List[Note], float]:
         """
         ここが「AI部分」。
         Basic Pitchなどのモデルで音声→ノート列に変換する。
@@ -64,7 +127,17 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
+                onset_threshold=0.6,       # デフォルト0.5 -> 0.6: アタックを厳しく判定
+                frame_threshold=0.4,       # デフォルト0.3 -> 0.4: 音の持続を厳しく判定
+                minimum_note_length=80.0,  # デフォルト58ms -> 80ms: 短いノイズを無視
             )
+
+        # BPM推定 (librosa)
+        import librosa
+        y, sr = librosa.load(str(audio_path), sr=self.config.sample_rate)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        estimated_bpm = int(round(float(tempo)))
+        print(f"Estimated BPM: {estimated_bpm}")
 
         notes: List[Note] = []
         for start, end, pitch, velocity, _ in note_events:
@@ -78,7 +151,23 @@ class Transcriber:
                     velocity=float(velocity),
                 )
             )
-        return notes
+        return notes, float(estimated_bpm)
+
+    def _filter_notes(self, notes: List[Note]) -> List[Note]:
+        """
+        AIが検出したノートからノイズを除去し、ギターらしい演奏に整理する。
+        """
+        filtered = []
+        for n in notes:
+            duration = n.end - n.start
+            # predict側でも制限しているが、念のため
+            if duration < 0.05:
+                continue
+            # 高音ノイズ除去 (MIDI 72=C5以上 かつ velocityが低い)
+            if n.pitch > 72 and n.velocity < 0.3:
+                continue
+            filtered.append(n)
+        return filtered
 
     def _notes_to_guitar_positions(self, notes: List[Note]) -> list[dict]:
         """

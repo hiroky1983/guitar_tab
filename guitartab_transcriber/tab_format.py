@@ -360,7 +360,7 @@ class TabResult:
             "\\version \"2.24.0\"\n"
             f"\\header {{ title = \"{title}\" }}\n\n"
             "music = {\n"
-            f"  \\tempo 4 = {bpm}\n  "
+            f"  \\tempo 4 = {int(round(bpm))}\n  "
             f"{music_block}\n"
             "}\n\n"
             "\\score {\n"
