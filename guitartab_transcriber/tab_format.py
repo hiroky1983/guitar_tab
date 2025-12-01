@@ -236,11 +236,26 @@ class TabResult:
         def quantize_beats(beats: float) -> float:
             """
             拍数を音楽的なグリッドに吸着させる。
-            リズムを安定させるため、強制的に「16分音符 (0.25)」グリッドのみを使用する。
-            3連符などは一旦除外。
+            シャッフル対応のため、3連符(1/3)を優先的にチェックする。
             """
-            grid = 0.25
-            return round(beats / grid) * grid
+            grids = [
+                1.0 / 3.0,  # 3連符 (優先)
+                0.25,       # 16分音符 (一応残す)
+                1.0,        # 4分音符
+                0.5,        # 8分音符
+            ]
+            
+            best_q = beats
+            min_error = float("inf")
+            
+            for grid in grids:
+                q = round(beats / grid) * grid
+                error = abs(beats - q)
+                if error < min_error:
+                    min_error = error
+                    best_q = q
+            
+            return best_q
 
         # 1. 全イベントを量子化し、開始時刻でグループ化（和音対応）
         quantized_events = []

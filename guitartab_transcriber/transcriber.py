@@ -28,27 +28,192 @@ class Transcriber:
     def transcribe(self, audio_path: str | Path, bpm: Optional[float] = None) -> TabResult:
         audio_path = Path(audio_path)
         
-        # 音源分離（ギターパートの抽出）
+        # 1. 音源分離（全パート）
         print("Separating audio sources (this may take a while)...")
-        guitar_audio_path = self._separate_audio(audio_path)
-        print(f"Using separated audio: {guitar_audio_path}")
+        separated_paths = self._separate_audio(audio_path)
+        guitar_path = separated_paths["guitar"]
+        drums_path = separated_paths["drums"]
+        print(f"Using separated audio: Guitar={guitar_path}, Drums={drums_path}")
         
-        # デバッグ用に分離された音声を保存
-        debug_path = Path("debug_guitar.wav")
+        # デバッグ用に保存
         import shutil
-        shutil.copy(guitar_audio_path, debug_path)
-        print(f"Saved separated guitar audio to: {debug_path.absolute()}")
+        shutil.copy(guitar_path, "debug_guitar.wav")
+        shutil.copy(drums_path, "debug_drums.wav")
 
-        notes, estimated_bpm = self._transcribe_to_notes(guitar_audio_path)
+        # 2. リズム解析（ドラム）
+        print("Analyzing rhythm from drums...")
+        beat_times, estimated_bpm = self._analyze_rhythm_from_drums(drums_path)
         
-        # 指定されたBPMがあれば優先、なければ推定値を使用
+        # 指定されたBPMがあれば優先
         final_bpm = bpm if bpm is not None else estimated_bpm
         print(f"Final BPM: {final_bpm}")
 
-        # ノイズ除去（最低限のフィルタのみ残す）
-        notes = self._filter_notes(notes)
-        events = self._notes_to_guitar_positions(notes)
+        # 3. 音程解析（ギター）
+        print("Transcribing guitar notes...")
+        notes, _ = self._transcribe_to_notes(guitar_path)
+
+        # 4. 統合（スナップ）
+        # ギターのノートを、ドラムのビート（グリッド）に合わせる
+        print("Snapping notes to drum beats...")
+        snapped_notes = self._snap_notes_to_grid(notes, beat_times, final_bpm)
+
+        # 時間シフト: 最初のドラムビートを 0.0秒（基準）にする
+        if beat_times:
+            first_beat_time = beat_times[0]
+            print(f"Shifting notes by -{first_beat_time:.3f}s (First beat)")
+            shifted_notes = []
+            for n in snapped_notes:
+                shifted_notes.append(Note(
+                    start=n.start - first_beat_time,
+                    end=n.end - first_beat_time,
+                    pitch=n.pitch,
+                    velocity=n.velocity
+                ))
+            snapped_notes = shifted_notes
+
+        # ノイズ除去
+        filtered_notes = self._filter_notes(snapped_notes)
+        
+        # パワーコード補完（倍音で消えたルート音を復元）
+        restored_notes = self._restore_power_chords(filtered_notes)
+        
+        print(f"\n--- First 10 Restored Notes ---")
+        for i, n in enumerate(restored_notes[:10]):
+            print(f"Note {i}: Start={n.start:.3f}, Pitch={n.pitch}, Vel={n.velocity:.2f}")
+        print("-------------------------------\n")
+        
+        events = self._notes_to_guitar_positions(restored_notes)
         return TabResult.from_tab_events(events, bpm=final_bpm)
+
+    def _restore_power_chords(self, notes: List[Note]) -> List[Note]:
+        """
+        ロック/メタル向け: 単独で鳴っている「5度音」に対して、ルート音を補完する。
+        AIは歪んだギターの倍音（5度上の音）を強く拾い、基音（ルート）を見逃すことがあるため。
+        """
+        # 時間順にソート
+        notes.sort(key=lambda n: n.start)
+        
+        # 判定を高速化するために、開始時間でグループ化
+        # 厳密な同時発音でなくても、重なっていればOKとする
+        
+        restored = []
+        restored.extend(notes)
+        
+        # 追加するノート
+        added_notes = []
+        
+        for note in notes:
+            # 補完対象とする「5度音」の候補
+            # B2(47) -> E2(40)
+            # E3(52) -> A2(45)
+            # A3(57) -> D3(50)
+            # D4(62) -> G3(55)
+            # G4(67) -> C4(60)
+            target_pitches = [47, 52, 57, 62, 67]
+            
+            if note.pitch in target_pitches:
+                root_pitch = note.pitch - 7
+                
+                # すでにルート音が近くにあるか確認
+                has_root = False
+                for other in notes:
+                    # 時間が重なっているか
+                    if max(note.start, other.start) < min(note.end, other.end):
+                        if other.pitch == root_pitch:
+                            has_root = True
+                            break
+                
+                if not has_root:
+                    # ルート音を追加
+                    # ベロシティは少し強めに設定（ルートなので）
+                    print(f"Restoring root note {root_pitch} for 5th note {note.pitch} at {note.start:.2f}s")
+                    added_notes.append(Note(
+                        start=note.start,
+                        end=note.end,
+                        pitch=root_pitch,
+                        velocity=min(1.0, note.velocity * 1.2)
+                    ))
+        
+        restored.extend(added_notes)
+        # 再ソート
+        restored.sort(key=lambda n: n.start)
+        
+        return restored
+
+    def _analyze_rhythm_from_drums(self, drums_path: Path) -> tuple[List[float], float]:
+        """
+        ドラムトラックからビート（拍）の時刻を検出する。
+        """
+        import librosa
+        y, sr = librosa.load(str(drums_path), sr=self.config.sample_rate)
+        
+        # オンセット検出（発音タイミング）
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        
+        # ビートトラッキング
+        tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+        beat_times = librosa.frames_to_time(beats, sr=sr)
+        
+        print(f"Detected {len(beat_times)} beats. First 10: {beat_times[:10]}")
+        
+        return list(beat_times), float(tempo)
+
+    def _snap_notes_to_grid(self, notes: List[Note], beat_times: List[float], bpm: float) -> List[Note]:
+        """
+        ノートの開始時刻を、最も近いビート（またはその分割点）に吸着させる。
+        """
+        if not beat_times:
+            return notes
+            
+        # ビート間隔（秒）
+        beat_interval = 60.0 / bpm
+        
+        # グリッドの作成: ビート位置だけでなく、16分音符単位のサブグリッドも作る
+        grid_points = []
+        
+        # 最初のビートより前も埋める
+        start_time = beat_times[0]
+        while start_time > 0:
+            start_time -= beat_interval
+            grid_points.append(start_time)
+            
+        for t in beat_times:
+            grid_points.append(t)
+            # シャッフルビート対応: 3連符（1拍を3等分）のグリッドを作成
+            # [0, 1/3, 2/3] の位置にグリッドを置く
+            for i in range(1, 3):
+                grid_points.append(t + beat_interval * (i / 3.0))
+                
+        # 最後のビート以降も少し埋める
+        last_time = beat_times[-1]
+        for i in range(1, 20): # 5小節分くらい余分に
+            grid_points.append(last_time + beat_interval * i)
+            for j in range(1, 3):
+                grid_points.append(last_time + beat_interval * i + beat_interval * (j / 3.0))
+                
+        grid_points.sort()
+        
+        snapped = []
+        for n in notes:
+            # 最も近いグリッド点を探す
+            closest_grid = min(grid_points, key=lambda g: abs(g - n.start))
+            
+            # 音の長さもグリッド単位に調整
+            duration = n.end - n.start
+            # 3連符単位に丸める
+            triplet_note = beat_interval / 3.0
+            quantized_duration = round(duration / triplet_note) * triplet_note
+            if quantized_duration < triplet_note:
+                quantized_duration = triplet_note
+                
+            snapped.append(Note(
+                start=closest_grid,
+                end=closest_grid + quantized_duration,
+                pitch=n.pitch,
+                velocity=n.velocity
+            ))
+            
+        return snapped
 
     def transcribe_from_youtube(self, url: str, bpm: Optional[float] = None) -> TabResult:
         import tempfile
@@ -59,9 +224,10 @@ class Transcriber:
 
     # === 内部実装 ===
     
-    def _separate_audio(self, audio_path: Path) -> Path:
+    def _separate_audio(self, audio_path: Path) -> dict[str, Path]:
         """
-        Demucsを使って音源分離を行い、ギターが含まれる 'other' トラックのパスを返す。
+        Demucsを使って音源分離を行い、各トラックのパスを返す。
+        リズム解析用にドラム、音程解析用にギター(other)を使用する。
         """
         import subprocess
         import shutil
@@ -71,11 +237,10 @@ class Transcriber:
         
         # demucsコマンドの実行
         # -n htdemucs: 高性能モデル
-        # --two-stems=other: other（ギター含む）とそれ以外に分ける（高速化）
+        # --two-stems オプションを削除し、全パート（drums, bass, other, vocals）を分離する
         cmd = [
             "demucs",
             "-n", "htdemucs",
-            "--two-stems", "other",
             "-o", str(out_dir),
             str(audio_path)
         ]
@@ -83,25 +248,28 @@ class Transcriber:
         # demucsがインストールされているか確認
         if shutil.which("demucs") is None:
             print("Warning: 'demucs' command not found. Skipping separation.")
-            return audio_path
+            return {"guitar": audio_path, "drums": audio_path}
 
         try:
             subprocess.run(cmd, check=True, capture_output=True)
         except subprocess.CalledProcessError as e:
             print(f"Demucs failed: {e.stderr.decode()}")
             print("Skipping separation and using original audio.")
-            return audio_path
+            return {"guitar": audio_path, "drums": audio_path}
             
         # 生成されたファイルのパス
-        # separated/htdemucs/{filename}/other.wav
+        # separated/htdemucs/{filename}/{stem}.wav
         track_name = audio_path.stem
-        separated_path = out_dir / "htdemucs" / track_name / "other.wav"
+        base_dir = out_dir / "htdemucs" / track_name
         
-        if separated_path.exists():
-            return separated_path
+        guitar_path = base_dir / "other.wav"
+        drums_path = base_dir / "drums.wav"
+        
+        if guitar_path.exists() and drums_path.exists():
+            return {"guitar": guitar_path, "drums": drums_path}
         else:
-            print(f"Separated file not found at {separated_path}. Using original.")
-            return audio_path
+            print(f"Separated files not found at {base_dir}. Using original.")
+            return {"guitar": audio_path, "drums": audio_path}
 
     def _load_audio(self, audio_path: Path):
         y, sr = librosa.load(audio_path, sr=self.config.sample_rate, mono=True)
@@ -130,9 +298,11 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.5,       # 0.6 -> 0.5: 標準に戻す（拾い漏れ防止）
-                frame_threshold=0.3,       # 0.4 -> 0.3: 標準に戻す
-                minimum_note_length=50.0,  # 80ms -> 50ms: 速いパッセージに対応
+                onset_threshold=0.4,       # 0.5 -> 0.4: 感度を上げて、ミュート音などを拾いやすくする
+                frame_threshold=0.3,
+                minimum_note_length=30.0,  # 50ms -> 30ms: 細かい刻みを拾う
+                minimum_frequency=40.0,    # 低音(E1=41Hz)を確実に拾う
+                maximum_frequency=1000.0,  # 高音(1000Hz=B5付近)以上は無視（倍音対策）
             )
 
         # BPM推定 (librosa)
@@ -247,11 +417,6 @@ class Transcriber:
         if not notes:
             return []
 
-        # リズム補正: 最初の音を 0.0秒（小節の頭）に合わせる
-        # これにより、曲の開始位置によるズレを解消する
-        first_start = notes[0].start
-        print(f"Shifting all notes by -{first_start:.3f}s to align start.")
-        
         # E標準の開放弦のMIDI: 6弦E2=40, 5弦A2=45, 4弦D3=50, 3弦G3=55, 2弦B3=59, 1弦E4=64
         open_strings = {
             6: 40,
@@ -269,13 +434,6 @@ class Transcriber:
         current_hand_pos = 0
 
         for n in notes:
-            # 時間シフト
-            shifted_start = n.start - first_start
-            shifted_end = n.end - first_start
-            
-            if shifted_start < 0: shifted_start = 0
-            if shifted_end < 0: shifted_end = 0.1
-
             possible_positions = []
 
             # 1. この音が弾けるすべてのポジションを列挙
@@ -320,8 +478,8 @@ class Transcriber:
                 {
                     "string": best_pos["string"],
                     "fret": best_pos["fret"],
-                    "start": shifted_start,
-                    "end": shifted_end,
+                    "start": n.start,
+                    "end": n.end,
                 }
             )
             
