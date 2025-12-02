@@ -52,6 +52,25 @@ class Transcriber:
         print("Transcribing guitar notes...")
         notes, _ = self._transcribe_to_notes(guitar_path)
 
+        # 歪みギターのアタック遅れ補正 (-120ms)
+        print("Applying latency correction (-0.12s)...")
+        for n in notes:
+            n.start -= 0.12
+            n.end -= 0.12
+
+        # 【強力補正 v2】
+        # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root)
+        # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root)
+        print("Applying harmonic correction v2...")
+        for n in notes:
+            original = n.pitch
+            if 46 <= n.pitch <= 51:
+                n.pitch -= 7
+                print(f"Shifted note {original} -> {n.pitch} (5th -> Root)")
+            elif 52 <= n.pitch <= 64:
+                n.pitch -= 12
+                print(f"Shifted note {original} -> {n.pitch} (Octave -> Root)")
+
         # 4. 統合（スナップ）
         # ギターのノートを、ドラムのビート（グリッド）に合わせる
         print("Snapping notes to drum beats...")
@@ -74,16 +93,87 @@ class Transcriber:
         # ノイズ除去
         filtered_notes = self._filter_notes(snapped_notes)
         
-        # パワーコード補完（倍音で消えたルート音を復元）
-        restored_notes = self._restore_power_chords(filtered_notes)
-        
-        print(f"\n--- First 10 Restored Notes ---")
-        for i, n in enumerate(restored_notes[:10]):
+        print(f"\n--- First 10 Filtered Notes ---")
+        for i, n in enumerate(filtered_notes[:10]):
             print(f"Note {i}: Start={n.start:.3f}, Pitch={n.pitch}, Vel={n.velocity:.2f}")
         print("-------------------------------\n")
         
-        events = self._notes_to_guitar_positions(restored_notes)
+        events = self._notes_to_guitar_positions(filtered_notes)
         return TabResult.from_tab_events(events, bpm=final_bpm)
+
+    def _analyze_rhythm_from_drums(self, drums_path: Path) -> tuple[List[float], float]:
+        """
+        ドラムトラックからビート（拍）の時刻を検出する。
+        """
+        import librosa
+        y, sr = librosa.load(str(drums_path), sr=self.config.sample_rate)
+        
+        # オンセット検出（発音タイミング）
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+        
+        # ビートトラッキング
+        tempo, beats = librosa.beat.beat_track(onset_envelope=onset_env, sr=sr)
+        beat_times = librosa.frames_to_time(beats, sr=sr)
+        
+        print(f"Detected {len(beat_times)} beats. First 10: {beat_times[:10]}")
+        
+        return list(beat_times), float(tempo)
+
+    def _snap_notes_to_grid(self, notes: List[Note], beat_times: List[float], bpm: float) -> List[Note]:
+        """
+        ノートの開始時刻を、最も近いビート（またはその分割点）に吸着させる。
+        """
+        if not beat_times:
+            return notes
+            
+        # ビート間隔（秒）
+        beat_interval = 60.0 / bpm
+        
+        # グリッドの作成: ビート位置だけでなく、16分音符単位のサブグリッドも作る
+        grid_points = []
+        
+        # 最初のビートより前も埋める
+        start_time = beat_times[0]
+        while start_time > 0:
+            start_time -= beat_interval
+            grid_points.append(start_time)
+            
+        for t in beat_times:
+            grid_points.append(t)
+            # ビート間を4分割（16分音符）
+            for i in range(1, 4):
+                grid_points.append(t + beat_interval * (i / 4.0))
+                
+        # 最後のビート以降も少し埋める
+        last_time = beat_times[-1]
+        for i in range(1, 20): # 5小節分くらい余分に
+            grid_points.append(last_time + beat_interval * i)
+            for j in range(1, 4):
+                grid_points.append(last_time + beat_interval * i + beat_interval * (j / 4.0))
+                
+        grid_points.sort()
+        
+        snapped = []
+        for n in notes:
+            # 最も近いグリッド点を探す
+            closest_grid = min(grid_points, key=lambda g: abs(g - n.start))
+            
+            # 音の長さもグリッド単位に調整
+            duration = n.end - n.start
+            # 16分音符単位に丸める
+            sixteenth_note = beat_interval / 4.0
+            quantized_duration = round(duration / sixteenth_note) * sixteenth_note
+            if quantized_duration < sixteenth_note:
+                quantized_duration = sixteenth_note
+                
+            snapped.append(Note(
+                start=closest_grid,
+                end=closest_grid + quantized_duration,
+                pitch=n.pitch,
+                velocity=n.velocity
+            ))
+            
+        return snapped
 
     def _restore_power_chords(self, notes: List[Note]) -> List[Note]:
         """
