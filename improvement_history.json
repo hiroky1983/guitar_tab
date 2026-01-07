@@ -182,5 +182,22 @@
       "lilypond_chord_deduplication": "tab_format.py:to_lilypond()の和音生成で同じ弦が複数回出現するのを防止 - used_strings setで既出の弦をスキップ"
     },
     "note": "ROOT CAUSE特定: Iteration 16のtranscriber.py修正では偽和音が解消せず。真の原因はtab_format.pyのto_lilypond()関数がLilyPond和音生成時に同じ弦の重複をチェックしていなかった。複数のtab_eventsが同じstart時刻+同じ弦で存在すると<d\\4 d\\4>が生成される。valid_notes生成時にused_stringsでフィルタ追加。"
+  },
+  {
+    "iteration": 18,
+    "accuracy": 0.0,
+    "timestamp": "2026-01-08T21:00:00.000000",
+    "changes": {},
+    "note": "CRITICAL: 初のground truth比較テスト実施。結果は精度0.00%。主要問題: (1) 過剰検出 646音符 vs ground truth 17音符 (38倍), (2) 初期タイミングオフセット 0.392s, (3) 不規則なタイミング (ground truthは0.256s間隔)。改善サイクルの方向性を大幅に見直す必要がある。"
+  },
+  {
+    "iteration": 19,
+    "accuracy": null,
+    "timestamp": "2026-01-08T21:30:00.000000",
+    "changes": {
+      "basic_pitch_ultra_conservative": "過剰検出対策: onset_threshold 0.45→0.70, frame_threshold 0.35→0.60, minimum_note_length 60ms→150ms",
+      "timing_reference_change": "タイミング基準を変更: 最初のドラムビート → 最初のギター音符。これにより初期オフセット問題を解決"
+    },
+    "note": "Iteration 18の0%精度から根本的改善。過剰検出(646音符)を解決するため、Basic Pitchパラメータを大幅に保守的に設定。タイミングオフセット(+0.392s)を解決するため、ドラムビート基準をやめて最初のギター音符を時間0として使用。"
   }
 ]

@@ -106,15 +106,16 @@ class Transcriber:
         print("Snapping notes to drum beats...")
         snapped_notes = self._snap_notes_to_grid(notes, beat_times, final_bpm)
 
-        # 時間シフト: 最初のドラムビートを 0.0秒（基準）にする
-        if beat_times:
-            first_beat_time = beat_times[0]
-            print(f"Shifting notes by -{first_beat_time:.3f}s (First beat)")
+        # 時間シフト: 最初のギター音を 0.0秒（基準）にする
+        # ドラムビートではなく、実際の最初の音符を基準にすることで正確なタイミングを確保
+        if snapped_notes:
+            first_note_time = snapped_notes[0].start
+            print(f"Shifting notes by -{first_note_time:.3f}s (First guitar note)")
             shifted_notes = []
             for n in snapped_notes:
                 shifted_notes.append(Note(
-                    start=n.start - first_beat_time,
-                    end=n.end - first_beat_time,
+                    start=n.start - first_note_time,
+                    end=n.end - first_note_time,
                     pitch=n.pitch,
                     velocity=n.velocity
                 ))
@@ -452,9 +453,9 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.45,      # さらに感度を上げて曲の開始部分を検出
-                frame_threshold=0.35,      # フレーム検出も緩和
-                minimum_note_length=60.0,  # より短い音符も検出
+                onset_threshold=0.70,      # 過剰検出防止: 大幅に保守的に (0.45→0.70)
+                frame_threshold=0.60,      # フレーム検出も厳格化 (0.35→0.60)
+                minimum_note_length=150.0, # 短い音符を除外 (60ms→150ms)
                 minimum_frequency=110.0,   # A2(110Hz=5弦開放)以上、6弦はハードブロックで除外
                 maximum_frequency=880.0,   # A5まで、さらに倍音を制限
             )

@@ -1,0 +1,26 @@
+{
+  "iteration": 18,
+  "accuracy": 0.0,
+  "matches": 0,
+  "total_ground_truth": 17,
+  "total_generated": 646,
+  "details": [
+    "\u2717 GT time=0.000 string=5 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=0.256 string=4 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=0.512 string=3 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=0.768 string=5 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=1.024 string=4 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=1.280 string=3 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=1.536 string=5 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=1.792 string=4 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=2.048 string=3 fret=0 \u2192 NO MATCH",
+    "\u2717 GT time=2.304 string=5 fret=2 \u2192 NO MATCH",
+    "\u2717 GT time=2.816 string=4 fret=4 \u2192 NO MATCH",
+    "\u2717 GT time=3.072 string=3 fret=6 \u2192 NO MATCH",
+    "\u2717 GT time=3.328 string=3 fret=7 \u2192 NO MATCH",
+    "\u2717 GT time=3.584 string=3 fret=9 \u2192 NO MATCH",
+    "\u2717 GT time=3.840 string=2 fret=11 \u2192 NO MATCH",
+    "\u2717 GT time=4.096 string=2 fret=12 \u2192 NO MATCH",
+    "\u2717 GT time=4.352 string=2 fret=13 \u2192 NO MATCH"
+  ]
+}
