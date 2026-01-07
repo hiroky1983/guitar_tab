@@ -52,11 +52,12 @@ class Transcriber:
         print("Transcribing guitar notes...")
         notes, _ = self._transcribe_to_notes(guitar_path)
 
-        # 歪みギターのアタック遅れ補正 (-120ms)
-        print("Applying latency correction (-0.12s)...")
+        # 歪みギターのアタック遅れ補正 (-100ms)
+        # 120ms から 100ms に調整: より正確なタイミング補正
+        print("Applying latency correction (-0.10s)...")
         for n in notes:
-            n.start -= 0.12
-            n.end -= 0.12
+            n.start -= 0.10
+            n.end -= 0.10
 
         # 【強力補正 v3】
         # 倍音補正を改善: より精密なゾーン分けと条件付き補正
@@ -125,57 +126,71 @@ class Transcriber:
     def _snap_notes_to_grid(self, notes: List[Note], beat_times: List[float], bpm: float) -> List[Note]:
         """
         ノートの開始時刻を、最も近いビート（またはその分割点）に吸着させる。
+        改善版: 32分音符も含めたより細かいグリッドと、適応的なスナップ閾値
         """
         if not beat_times:
             return notes
-            
+
         # ビート間隔（秒）
         beat_interval = 60.0 / bpm
-        
-        # グリッドの作成: ビート位置だけでなく、16分音符単位のサブグリッドも作る
+
+        # グリッドの作成: 32分音符単位のサブグリッド
+        # ロック曲の高速フレーズに対応するため、より細かいグリッドを使用
         grid_points = []
-        
+
         # 最初のビートより前も埋める
         start_time = beat_times[0]
         while start_time > 0:
             start_time -= beat_interval
             grid_points.append(start_time)
-            
+
         for t in beat_times:
             grid_points.append(t)
-            # ビート間を4分割（16分音符）
-            for i in range(1, 4):
-                grid_points.append(t + beat_interval * (i / 4.0))
-                
+            # ビート間を8分割（32分音符）
+            for i in range(1, 8):
+                grid_points.append(t + beat_interval * (i / 8.0))
+
         # 最後のビート以降も少し埋める
         last_time = beat_times[-1]
         for i in range(1, 20): # 5小節分くらい余分に
             grid_points.append(last_time + beat_interval * i)
-            for j in range(1, 4):
-                grid_points.append(last_time + beat_interval * i + beat_interval * (j / 4.0))
-                
+            for j in range(1, 8):
+                grid_points.append(last_time + beat_interval * i + beat_interval * (j / 8.0))
+
         grid_points.sort()
-        
+
+        # スナップ閾値: これより離れている場合はスナップしない
+        snap_threshold = beat_interval / 16.0  # 16分音符の半分
+
         snapped = []
         for n in notes:
             # 最も近いグリッド点を探す
             closest_grid = min(grid_points, key=lambda g: abs(g - n.start))
-            
+
+            # 距離をチェック
+            distance = abs(closest_grid - n.start)
+
+            # スナップ閾値内であればスナップ、そうでなければ元の時刻を使用
+            if distance < snap_threshold:
+                snapped_start = closest_grid
+            else:
+                snapped_start = n.start
+
             # 音の長さもグリッド単位に調整
             duration = n.end - n.start
-            # 16分音符単位に丸める
-            sixteenth_note = beat_interval / 4.0
-            quantized_duration = round(duration / sixteenth_note) * sixteenth_note
-            if quantized_duration < sixteenth_note:
-                quantized_duration = sixteenth_note
-                
+            # 32分音符単位に丸める
+            thirtysecond_note = beat_interval / 8.0
+            quantized_duration = round(duration / thirtysecond_note) * thirtysecond_note
+            if quantized_duration < thirtysecond_note:
+                quantized_duration = thirtysecond_note
+
             snapped.append(Note(
-                start=closest_grid,
-                end=closest_grid + quantized_duration,
+                start=snapped_start,
+                end=snapped_start + quantized_duration,
                 pitch=n.pitch,
                 velocity=n.velocity
             ))
-            
+
         return snapped
 
 
@@ -376,11 +391,31 @@ class Transcriber:
 
         return final_result
 
+    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.05) -> List[List[Note]]:
+        """
+        同時発音している音符をグループ化する（和音検出）
+        """
+        if not notes:
+            return []
+
+        groups = []
+        current_group = [notes[0]]
+
+        for i in range(1, len(notes)):
+            # 前の音符との時間差
+            if abs(notes[i].start - current_group[0].start) < time_window:
+                current_group.append(notes[i])
+            else:
+                groups.append(current_group)
+                current_group = [notes[i]]
+
+        groups.append(current_group)
+        return groups
+
     def _notes_to_guitar_positions(self, notes: List[Note]) -> list[dict]:
         """
         note列をギターの弦・フレットに割り当てるロジック。
-        ここはMVP用に「一番低い弦で弾けるポジションを選ぶ」だけの簡易版。
-        チューニングや運指最適化は今後拡張。
+        改善版: 和音検出と運指の連続性を考慮
         """
         if not notes:
             return []
@@ -396,73 +431,89 @@ class Transcriber:
         }
 
         tab_events: list[dict] = []
-        
+
         # 運指決定のための状態変数
-        # 初期位置はローポジション（例: 5フレット付近）を想定、あるいは0
         current_hand_pos = 0
+        used_strings_in_chord = set()  # 和音で使用中の弦を記録
 
-        for n in notes:
-            possible_positions = []
+        # 同時発音グループを検出
+        note_groups = self._detect_simultaneous_notes(notes)
 
-            # 1. この音が弾けるすべてのポジションを列挙
-            for s, open_pitch in open_strings.items():
-                fret = n.pitch - open_pitch
-                if 0 <= fret <= 20:  # 20フレットまで
-                    possible_positions.append({"string": s, "fret": fret})
+        for group in note_groups:
+            used_strings_in_chord.clear()
 
-            if not possible_positions:
-                continue
+            for n in group:
+                possible_positions = []
 
-            # 2. 最適なポジションを選択
-            # コスト関数: 人間が弾きやすい運指を選ぶ
-            
-            def calculate_cost(pos):
-                fret = pos["fret"]
-                string_num = pos["string"]
+                # 1. この音が弾けるすべてのポジションを列挙
+                for s, open_pitch in open_strings.items():
+                    # 和音内で既に使用されている弦は除外
+                    if s in used_strings_in_chord:
+                        continue
 
-                # 1. 開放弦ボーナス（ロック曲では開放弦を積極的に使う）
-                open_string_bonus = -3 if fret == 0 else 0
+                    fret = n.pitch - open_pitch
+                    if 0 <= fret <= 20:  # 20フレットまで
+                        possible_positions.append({"string": s, "fret": fret})
 
-                # 2. フレット移動コスト
-                if fret == 0:
-                    fret_dist = 0  # 開放弦は移動コストゼロ
-                else:
-                    # 現在の手の位置との距離
-                    if current_hand_pos == 0:
-                        # 開放弦から押さえ弦へ: ローポジション(1-5フレット)を優先
-                        fret_dist = abs(fret - 3) * 0.5
+                if not possible_positions:
+                    continue
+
+                # 2. 最適なポジションを選択
+                # コスト関数: 人間が弾きやすい運指を選ぶ
+
+                def calculate_cost(pos):
+                    fret = pos["fret"]
+                    string_num = pos["string"]
+
+                    # 1. 開放弦ボーナス（ロック曲では開放弦を積極的に使う）
+                    open_string_bonus = -3 if fret == 0 else 0
+
+                    # 2. フレット移動コスト
+                    if fret == 0:
+                        fret_dist = 0  # 開放弦は移動コストゼロ
                     else:
-                        fret_dist = abs(fret - current_hand_pos)
+                        # 現在の手の位置との距離
+                        if current_hand_pos == 0:
+                            # 開放弦から押さえ弦へ: ローポジション(1-5フレット)を優先
+                            fret_dist = abs(fret - 3) * 0.5
+                        else:
+                            fret_dist = abs(fret - current_hand_pos)
 
-                # 3. ハイフレットペナルティ
-                # 12フレットを超えると大きなペナルティ
-                high_fret_penalty = 0
-                if fret > 12:
-                    high_fret_penalty = (fret - 12) * 3
-                elif fret > 7:
-                    # 7フレット以上も少しペナルティ（ローポジション優先）
-                    high_fret_penalty = (fret - 7) * 0.5
+                    # 3. ハイフレットペナルティ
+                    # 12フレットを超えると大きなペナルティ
+                    high_fret_penalty = 0
+                    if fret > 12:
+                        high_fret_penalty = (fret - 12) * 3
+                    elif fret > 7:
+                        # 7フレット以上も少しペナルティ（ローポジション優先）
+                        high_fret_penalty = (fret - 7) * 0.5
 
-                # 4. 弦の優先度（低い弦を優先するロック/メタルスタイル）
-                string_preference = (7 - string_num) * 0.3  # 6弦が最優先
+                    # 4. 弦の優先度（低い弦を優先するロック/メタルスタイル）
+                    string_preference = (7 - string_num) * 0.3  # 6弦が最優先
 
-                return fret_dist + high_fret_penalty + string_preference + open_string_bonus
+                    # 5. 和音内での弦の重複を避けるボーナス
+                    string_conflict_penalty = 0 if s not in used_strings_in_chord else 100
 
-            best_pos = min(possible_positions, key=calculate_cost)
+                    return fret_dist + high_fret_penalty + string_preference + open_string_bonus + string_conflict_penalty
 
-            # 選んだポジションを採用
-            tab_events.append(
-                {
-                    "string": best_pos["string"],
-                    "fret": best_pos["fret"],
-                    "start": n.start,
-                    "end": n.end,
-                }
-            )
-            
-            # 手の位置を更新
-            # 開放弦の場合は手の位置（ポジション）を変えない
-            if best_pos["fret"] > 0:
-                current_hand_pos = best_pos["fret"]
+                best_pos = min(possible_positions, key=calculate_cost)
+
+                # 選んだポジションを採用
+                tab_events.append(
+                    {
+                        "string": best_pos["string"],
+                        "fret": best_pos["fret"],
+                        "start": n.start,
+                        "end": n.end,
+                    }
+                )
+
+                # 和音内で使用した弦を記録
+                used_strings_in_chord.add(best_pos["string"])
+
+                # 手の位置を更新
+                # 開放弦の場合は手の位置（ポジション）を変えない
+                if best_pos["fret"] > 0:
+                    current_hand_pos = best_pos["fret"]
 
         return tab_events
