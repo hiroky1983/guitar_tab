@@ -645,6 +645,10 @@ class Transcriber:
 
                 # 1. この音が弾けるすべてのポジションを列挙
                 for s, open_pitch in open_strings.items():
+                    # 6弦を完全にブロック（min_pitch=50でも高フレットで選択される問題を解決）
+                    if s == 6:
+                        continue
+
                     # 和音内で既に使用されている弦は除外
                     if s in used_strings_in_chord:
                         continue
