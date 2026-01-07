@@ -86,5 +86,15 @@
       "5th_harmonic_correction": "Velocity threshold 0.7→0.5 for more conservative application"
     },
     "note": "ROOT CAUSE FIXED: Iteration 6 test showed pitches 40-43 in processed notes despite min_pitch=45. Discovered harmonic correction was blindly shifting pitch-12 without bounds checking. Now prevents shifting below min_pitch and filters out-of-range notes."
+  },
+  {
+    "iteration": 8,
+    "accuracy": null,
+    "timestamp": "2026-01-08T16:00:00.000000",
+    "changes": {
+      "basic_pitch_rebalanced": "onset_threshold 0.6→0.55, frame_threshold 0.5→0.45, minimum_note_length 127.5ms→100ms",
+      "chord_detection_ultra_strict": "Time window 10ms→5ms in both _filter_notes and _detect_simultaneous_notes"
+    },
+    "note": "Iteration 7 was too conservative - missing notes, creating gaps/rests. Rebalanced to detect more notes while maintaining pitch range protections from iteration 7."
   }
 ]
