@@ -1,0 +1,26 @@
+[
+  {
+    "iteration": 1,
+    "accuracy": 0.0,
+    "timestamp": "2026-01-07T22:10:40.363691",
+    "note": "Initial run - YouTube unavailable"
+  },
+  {
+    "iteration": 2,
+    "accuracy": null,
+    "timestamp": "2026-01-07T22:15:00.000000",
+    "changes": {
+      "basic_pitch_params": {
+        "onset_threshold": "0.4 -> 0.35",
+        "frame_threshold": "0.3 -> 0.25",
+        "minimum_note_length": "30ms -> 25ms",
+        "minimum_frequency": "40Hz -> 38Hz",
+        "maximum_frequency": "1000Hz -> 950Hz"
+      },
+      "harmonic_correction": "v2 -> v3: Added velocity-based 5th harmonic correction, expanded octave range to 65",
+      "filtering": "Improved noise filtering: duration threshold 0.05->0.03, velocity threshold added (>0.15)",
+      "fingering_algorithm": "Added open string bonus (-3), improved fret distance calculation, added string preference for low strings"
+    },
+    "note": "Applied improvements based on AI_AGENT_GUIDE.md recommendations"
+  }
+]

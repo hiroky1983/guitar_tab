@@ -1,0 +1,19 @@
+[
+  {"time": 0.0, "string": 5, "fret": 0, "duration": 0.256},
+  {"time": 0.256, "string": 4, "fret": 0, "duration": 0.256},
+  {"time": 0.512, "string": 3, "fret": 0, "duration": 0.256},
+  {"time": 0.768, "string": 5, "fret": 0, "duration": 0.256},
+  {"time": 1.024, "string": 4, "fret": 0, "duration": 0.256},
+  {"time": 1.280, "string": 3, "fret": 0, "duration": 0.256},
+  {"time": 1.536, "string": 5, "fret": 0, "duration": 0.256},
+  {"time": 1.792, "string": 4, "fret": 0, "duration": 0.256},
+  {"time": 2.048, "string": 3, "fret": 0, "duration": 0.256},
+  {"time": 2.304, "string": 5, "fret": 2, "duration": 0.512},
+  {"time": 2.816, "string": 4, "fret": 4, "duration": 0.256},
+  {"time": 3.072, "string": 3, "fret": 6, "duration": 0.256},
+  {"time": 3.328, "string": 3, "fret": 7, "duration": 0.256},
+  {"time": 3.584, "string": 3, "fret": 9, "duration": 0.256},
+  {"time": 3.840, "string": 2, "fret": 11, "duration": 0.256},
+  {"time": 4.096, "string": 2, "fret": 12, "duration": 0.256},
+  {"time": 4.352, "string": 2, "fret": 13, "duration": 0.256}
+]

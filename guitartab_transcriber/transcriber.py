@@ -58,16 +58,19 @@ class Transcriber:
             n.start -= 0.12
             n.end -= 0.12
 
-        # 【強力補正 v2】
-        # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root)
-        # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root)
-        print("Applying harmonic correction v2...")
+        # 【強力補正 v3】
+        # 倍音補正を改善: より精密なゾーン分けと条件付き補正
+        # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root) ただし、ベロシティが低い場合のみ
+        # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root) より広範囲に適用
+        print("Applying harmonic correction v3...")
         for n in notes:
             original = n.pitch
-            if 46 <= n.pitch <= 51:
+            # 5度倍音の補正 - ベロシティが低い場合のみ適用
+            if 46 <= n.pitch <= 51 and n.velocity < 0.7:
                 n.pitch -= 7
-                print(f"Shifted note {original} -> {n.pitch} (5th -> Root)")
-            elif 52 <= n.pitch <= 64:
+                print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
+            # オクターブ倍音の補正 - より積極的に適用
+            elif 52 <= n.pitch <= 65:
                 n.pitch -= 12
                 print(f"Shifted note {original} -> {n.pitch} (Octave -> Root)")
 
@@ -388,11 +391,11 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.4,       # 0.5 -> 0.4: 感度を上げて、ミュート音などを拾いやすくする
-                frame_threshold=0.3,
-                minimum_note_length=30.0,  # 50ms -> 30ms: 細かい刻みを拾う
-                minimum_frequency=40.0,    # 低音(E1=41Hz)を確実に拾う
-                maximum_frequency=1000.0,  # 高音(1000Hz=B5付近)以上は無視（倍音対策）
+                onset_threshold=0.35,      # 0.4 -> 0.35: さらに感度を上げて、ミュート音などを拾いやすくする
+                frame_threshold=0.25,      # 0.3 -> 0.25: フレーム検出の感度を上げる
+                minimum_note_length=25.0,  # 30ms -> 25ms: より細かい刻みを拾う
+                minimum_frequency=38.0,    # 40Hz -> 38Hz: より低音を拾う(E1=41Hz周辺)
+                maximum_frequency=950.0,   # 1000Hz -> 950Hz: 倍音対策を強化
             )
 
         # BPM推定 (librosa)
@@ -488,14 +491,18 @@ class Transcriber:
             
             filtered_notes.extend(kept_notes)
 
-        # 3. 最終的なゴミ掃除
+        # 3. 最終的なゴミ掃除 - 改善版
         final_result = []
         for n in filtered_notes:
             duration = n.end - n.start
-            if duration < 0.05: continue
-            if n.pitch > 75 and n.velocity < 0.3: continue # 超高音ノイズ
+            # 極端に短い音符を除外（ただし、Palm Muteの可能性も考慮）
+            if duration < 0.03: continue
+            # 超高音ノイズの除外基準を緩和（ハーモニクスの可能性）
+            if n.pitch > 77 and n.velocity < 0.25: continue
+            # 極端に低い音量の音符を除外
+            if n.velocity < 0.15: continue
             final_result.append(n)
-            
+
         return final_result
 
     def _notes_to_guitar_positions(self, notes: List[Note]) -> list[dict]:
@@ -540,26 +547,35 @@ class Transcriber:
             
             def calculate_cost(pos):
                 fret = pos["fret"]
-                
-                # 1. フレット移動コスト
-                # 開放弦(0)はどこからでもアクセスしやすいので移動コストを低く（0）みなす
+                string_num = pos["string"]
+
+                # 1. 開放弦ボーナス（ロック曲では開放弦を積極的に使う）
+                open_string_bonus = -3 if fret == 0 else 0
+
+                # 2. フレット移動コスト
                 if fret == 0:
-                    fret_dist = 0
+                    fret_dist = 0  # 開放弦は移動コストゼロ
                 else:
                     # 現在の手の位置との距離
                     if current_hand_pos == 0:
-                        fret_dist = 0 # 簡易的にコスト0とする
+                        # 開放弦から押さえ弦へ: ローポジション(1-5フレット)を優先
+                        fret_dist = abs(fret - 3) * 0.5
                     else:
                         fret_dist = abs(fret - current_hand_pos)
 
-                # 2. ハイフレットペナルティ
-                # 基本的にローポジション〜ミドルポジションを優先する
-                # 12フレットを超えるとペナルティを付与
+                # 3. ハイフレットペナルティ
+                # 12フレットを超えると大きなペナルティ
                 high_fret_penalty = 0
                 if fret > 12:
-                    high_fret_penalty = (fret - 12) * 2
-                
-                return fret_dist + high_fret_penalty
+                    high_fret_penalty = (fret - 12) * 3
+                elif fret > 7:
+                    # 7フレット以上も少しペナルティ（ローポジション優先）
+                    high_fret_penalty = (fret - 7) * 0.5
+
+                # 4. 弦の優先度（低い弦を優先するロック/メタルスタイル）
+                string_preference = (7 - string_num) * 0.3  # 6弦が最優先
+
+                return fret_dist + high_fret_penalty + string_preference + open_string_bonus
 
             best_pos = min(possible_positions, key=calculate_cost)
 
