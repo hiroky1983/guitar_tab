@@ -649,12 +649,6 @@ class Transcriber:
 
             deduplicated_group = list(unique_pitches.values())
 
-            # Debug: chord deduplication
-            if len(group) > len(deduplicated_group):
-                original_pitches = [n.pitch for n in group]
-                dedup_pitches = [n.pitch for n in deduplicated_group]
-                print(f"DEBUG: Deduped chord {original_pitches} → {dedup_pitches}")
-
             for n in deduplicated_group:
                 possible_positions = []
 
@@ -721,10 +715,6 @@ class Transcriber:
                     return fret_dist + high_fret_penalty + string_preference + open_string_bonus + string_conflict_penalty
 
                 best_pos = min(possible_positions, key=calculate_cost)
-
-                # Debug: string conflict check
-                if best_pos["string"] in used_strings_in_chord:
-                    print(f"ERROR: String {best_pos['string']} already used in chord! Pitch={n.pitch}, used_strings={used_strings_in_chord}")
 
                 # 選んだポジションを採用
                 tab_events.append(
