@@ -73,5 +73,18 @@
       "min_pitch_config": "Config min_pitch 40→45 (E2→A2) to exclude bass entirely"
     },
     "note": "CRITICAL: Based on actual test results showing over-detection. Ground truth = simple open strings (5,4,3), output had complex chords and 6th string. Fixed bass contamination and harmonic over-detection."
+  },
+  {
+    "iteration": 7,
+    "accuracy": null,
+    "timestamp": "2026-01-08T15:30:00.000000",
+    "changes": {
+      "harmonic_correction_v4": "CRITICAL FIX: Prevent octave/5th shift from creating notes below min_pitch (was creating pitch 40-43 from 52-55). Added bounds checking before shifting.",
+      "post_harmonic_filtering": "Added explicit filter after harmonic correction to remove notes outside [min_pitch, max_pitch]",
+      "chord_detection_stricter": "Time window 20ms→10ms in both _filter_notes and _detect_simultaneous_notes",
+      "basic_pitch_ultra_conservative": "onset_threshold 0.5→0.6, frame_threshold 0.4→0.5, minimum_note_length 50ms→127.5ms (16th note @ 117BPM)",
+      "5th_harmonic_correction": "Velocity threshold 0.7→0.5 for more conservative application"
+    },
+    "note": "ROOT CAUSE FIXED: Iteration 6 test showed pitches 40-43 in processed notes despite min_pitch=45. Discovered harmonic correction was blindly shifting pitch-12 without bounds checking. Now prevents shifting below min_pitch and filters out-of-range notes."
   }
 ]
