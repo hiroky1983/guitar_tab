@@ -102,9 +102,10 @@ class Transcriber:
         notes = self._detect_palm_mutes(notes)
 
         # 5. 統合（スナップ）
+        # DISABLED: ドラムビートへのスナッピングが不正確なため、一時的に無効化
         # ギターのノートを、ドラムのビート（グリッド）に合わせる
-        print("Snapping notes to drum beats...")
-        snapped_notes = self._snap_notes_to_grid(notes, beat_times, final_bpm)
+        print("Skipping drum beat snapping (using raw timing)...")
+        snapped_notes = notes  # self._snap_notes_to_grid(notes, beat_times, final_bpm)
 
         # 時間シフト: 最初のギター音を 0.0秒（基準）にする
         # ドラムビートではなく、実際の最初の音符を基準にすることで正確なタイミングを確保
