@@ -164,5 +164,14 @@
       "string_conflict_penalty_bugfix": "calculate_cost内のstring_conflict_penalty計算で変数スコープエラー修正: `s` → `string_num`"
     },
     "note": "CRITICAL BUGFIX: 偽和音<d\\4 d\\4>の原因を特定 - calculate_cost関数がouterループ変数`s`を参照していたため、評価時に間違った弦番号でコンフリクトチェック。`string_num`に修正して同一弦の重複を正しく防止。"
+  },
+  {
+    "iteration": 16,
+    "accuracy": null,
+    "timestamp": "2026-01-08T20:00:00.000000",
+    "changes": {
+      "chord_deduplication": "和音グループ内で同じpitchが複数検出された場合、重複を除去して最初の1つだけ保持"
+    },
+    "note": "ROOT CAUSE: Iteration 15のscope修正では偽和音が解消せず。真の原因は_detect_simultaneous_notesが3ms以内に同じpitchを複数検出すること(例: <e\\5 e\\5 e\\5>)。和音グループ処理前にpitch重複除去を追加 - unique_pitches辞書で最初の出現のみ保持。"
   }
 ]

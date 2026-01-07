@@ -641,7 +641,15 @@ class Transcriber:
         for group in note_groups:
             used_strings_in_chord.clear()
 
+            # 和音グループ内の重複pitch除去 - 同じpitchが複数回検出された場合、最初の1つだけ保持
+            unique_pitches = {}
             for n in group:
+                if n.pitch not in unique_pitches:
+                    unique_pitches[n.pitch] = n
+
+            deduplicated_group = list(unique_pitches.values())
+
+            for n in deduplicated_group:
                 possible_positions = []
 
                 # 1. この音が弾けるすべてのポジションを列挙
