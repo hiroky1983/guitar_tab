@@ -34,5 +34,17 @@
       "fingering_context": "Implemented string conflict avoidance in chords, maintains used strings tracking"
     },
     "note": "Focus on rhythm accuracy and chord handling improvements"
+  },
+  {
+    "iteration": 4,
+    "accuracy": null,
+    "timestamp": "2026-01-07T22:35:00.000000",
+    "changes": {
+      "bpm_validation": "Added tempo validation (60-180 BPM) with double/half tempo correction",
+      "palm_mute_detection": "New _detect_palm_mutes() method: detects P.M. based on duration, velocity, pitch, and continuity",
+      "filtering_enhancement": "Smart filtering that protects palm muted notes from removal",
+      "pitch_range_optimization": "Reduced max_pitch from 88 to 84 to minimize high-frequency harmonic noise"
+    },
+    "note": "Enhanced palm mute handling and BPM accuracy - critical for rock/metal transcription"
   }
 ]

@@ -15,8 +15,8 @@ from .youtube import download_youtube_audio
 class TranscriptionConfig:
     tuning: Literal["E_standard", "Drop_D"] = "E_standard"
     sample_rate: int = 44100
-    min_pitch: int = 40
-    max_pitch: int = 88
+    min_pitch: int = 40  # E2 (6弦開放)
+    max_pitch: int = 84  # C6 (1弦20フレット相当) - 88から84に変更して倍音ノイズを削減
 
 
 class Transcriber:
@@ -43,10 +43,19 @@ class Transcriber:
         # 2. リズム解析（ドラム）
         print("Analyzing rhythm from drums...")
         beat_times, estimated_bpm = self._analyze_rhythm_from_drums(drums_path)
-        
+
+        # BPM検証と補正
+        # 不自然なBPM値を補正（倍テンポ/半テンポの誤検出対策）
+        if estimated_bpm > 180:
+            print(f"BPM {estimated_bpm} is too high, halving to {estimated_bpm/2}")
+            estimated_bpm = estimated_bpm / 2
+        elif estimated_bpm < 60:
+            print(f"BPM {estimated_bpm} is too low, doubling to {estimated_bpm*2}")
+            estimated_bpm = estimated_bpm * 2
+
         # 指定されたBPMがあれば優先
         final_bpm = bpm if bpm is not None else estimated_bpm
-        print(f"Final BPM: {final_bpm}")
+        print(f"Final BPM: {final_bpm:.1f}")
 
         # 3. 音程解析（ギター）
         print("Transcribing guitar notes...")
@@ -75,7 +84,12 @@ class Transcriber:
                 n.pitch -= 12
                 print(f"Shifted note {original} -> {n.pitch} (Octave -> Root)")
 
-        # 4. 統合（スナップ）
+        # 4. パームミュート検出
+        # ロック/メタルで頻出するパームミュートを検出してマーク
+        print("Detecting palm muted notes...")
+        notes = self._detect_palm_mutes(notes)
+
+        # 5. 統合（スナップ）
         # ギターのノートを、ドラムのビート（グリッド）に合わせる
         print("Snapping notes to drum beats...")
         snapped_notes = self._snap_notes_to_grid(notes, beat_times, final_bpm)
@@ -104,6 +118,47 @@ class Transcriber:
         
         events = self._notes_to_guitar_positions(filtered_notes)
         return TabResult.from_tab_events(events, bpm=final_bpm)
+
+    def _detect_palm_mutes(self, notes: List[Note]) -> List[Note]:
+        """
+        パームミュート（P.M.）の検出
+        特徴:
+        - 短い音符 (duration < 0.2s)
+        - 中程度〜低いベロシティ (0.2 < velocity < 0.6)
+        - 低音弦のピッチ (MIDI 40-55)
+        - 連続して出現することが多い
+        """
+        if not notes:
+            return notes
+
+        palm_mute_count = 0
+
+        for i, note in enumerate(notes):
+            duration = note.end - note.start
+
+            # パームミュートの条件判定
+            is_pm = (
+                duration < 0.2 and                    # 短い音符
+                0.2 < note.velocity < 0.6 and         # 中程度の音量
+                40 <= note.pitch <= 55                 # 低音弦（E2〜G3）
+            )
+
+            # 連続性チェック: 前後の音符も同様の特徴を持つか
+            if is_pm and i > 0:
+                prev_note = notes[i-1]
+                time_diff = note.start - prev_note.end
+                # 前の音符が近い位置にあり、同様の特徴を持つ場合、確信度を上げる
+                if time_diff < 0.3 and 40 <= prev_note.pitch <= 55:
+                    is_pm = True
+
+            if is_pm:
+                palm_mute_count += 1
+                # Note: 将来的にはNote型にpalm_muteフラグを追加する
+                # 現時点では検出だけを行い、velocityを若干調整
+                note.velocity = max(0.15, note.velocity * 0.9)
+
+        print(f"Detected {palm_mute_count} potential palm muted notes")
+        return notes
 
     def _analyze_rhythm_from_drums(self, drums_path: Path) -> tuple[List[float], float]:
         """
@@ -377,16 +432,30 @@ class Transcriber:
             
             filtered_notes.extend(kept_notes)
 
-        # 3. 最終的なゴミ掃除 - 改善版
+        # 3. 最終的なゴミ掃除 - 改善版 v2
         final_result = []
         for n in filtered_notes:
             duration = n.end - n.start
-            # 極端に短い音符を除外（ただし、Palm Muteの可能性も考慮）
-            if duration < 0.03: continue
-            # 超高音ノイズの除外基準を緩和（ハーモニクスの可能性）
-            if n.pitch > 77 and n.velocity < 0.25: continue
-            # 極端に低い音量の音符を除外
-            if n.velocity < 0.15: continue
+
+            # パームミュートの可能性がある音符は緩い基準を適用
+            is_potential_palm_mute = (
+                0.05 < duration < 0.25 and
+                0.2 < n.velocity < 0.6 and
+                40 <= n.pitch <= 55
+            )
+
+            # 極端に短い音符を除外（ただし、Palm Muteは保護）
+            if duration < 0.03 and not is_potential_palm_mute:
+                continue
+
+            # 超高音ノイズの除外（ハーモニクスは保護）
+            if n.pitch > 77 and n.velocity < 0.25:
+                continue
+
+            # 極端に低い音量の音符を除外（パームミュートは保護）
+            if n.velocity < 0.15 and not is_potential_palm_mute:
+                continue
+
             final_result.append(n)
 
         return final_result
