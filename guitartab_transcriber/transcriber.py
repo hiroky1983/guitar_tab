@@ -451,9 +451,9 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.6,       # 0.5 -> 0.6: さらに保守的に（確実な音のみ）
-                frame_threshold=0.5,       # 0.4 -> 0.5: フレーム検出をさらに厳しく
-                minimum_note_length=127.5, # 50ms -> 127.5ms: 16分音符相当（117BPM）を最小とする
+                onset_threshold=0.55,      # 0.6 -> 0.55: バランス調整（過検出と検出漏れのバランス）
+                frame_threshold=0.45,      # 0.5 -> 0.45: フレーム検出も少し緩和
+                minimum_note_length=100.0, # 127.5ms -> 100ms: より短い音符も検出
                 minimum_frequency=100.0,   # 38Hz -> 100Hz: A2(110Hz)付近から検出、ベース音を完全除外
                 maximum_frequency=880.0,   # 950Hz -> 880Hz: A5まで、さらに倍音を制限
             )
@@ -504,7 +504,7 @@ class Transcriber:
             
         current_group = [notes[0]]
         for i in range(1, len(notes)):
-            if abs(notes[i].start - current_group[0].start) < 0.01:  # 50ms -> 10ms: より厳しく
+            if abs(notes[i].start - current_group[0].start) < 0.005:  # 10ms -> 5ms: さらに厳しく
                 current_group.append(notes[i])
             else:
                 groups.append(current_group)
@@ -588,10 +588,10 @@ class Transcriber:
 
         return final_result
 
-    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.01) -> List[List[Note]]:
+    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.005) -> List[List[Note]]:
         """
         同時発音している音符をグループ化する（和音検出）
-        時間窓を10msに縮小 - さらに厳しく過剰な和音検出を防ぐ
+        時間窓を5msに縮小 - さらに厳しく過剰な和音検出を防ぐ
         """
         if not notes:
             return []
