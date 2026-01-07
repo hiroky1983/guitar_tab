@@ -15,7 +15,7 @@ from .youtube import download_youtube_audio
 class TranscriptionConfig:
     tuning: Literal["E_standard", "Drop_D"] = "E_standard"
     sample_rate: int = 44100
-    min_pitch: int = 50  # D3 (5弦開放) - 45→50で6弦音域を完全除外
+    min_pitch: int = 45  # A2 (5弦開放) - 6弦はハードブロックで除外
     max_pitch: int = 84  # C6 (1弦20フレット相当) - 88から84に変更して倍音ノイズを削減
 
 
@@ -68,21 +68,22 @@ class Transcriber:
             n.start -= 0.10
             n.end -= 0.10
 
-        # 【強力補正 v3】
+        # 【強力補正 v6】
         # 倍音補正を改善: より精密なゾーン分けと条件付き補正
         # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root) ただし、ベロシティが低い場合のみ
         # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root) より広範囲に適用
-        print("Applying harmonic correction v5...")
+        # min_pitch=45に戻したので範囲も元に戻す（境界チェックで保護）
+        print("Applying harmonic correction v6...")
         for n in notes:
             original = n.pitch
-            # 5度倍音の補正 - ベロシティが低い場合のみ適用、min_pitch=50に対応
-            if 57 <= n.pitch <= 62 and n.velocity < 0.5:  # 範囲を46-51→57-62に調整
+            # 5度倍音の補正 - ベロシティが低い場合のみ適用
+            if 46 <= n.pitch <= 51 and n.velocity < 0.5:
                 shifted = n.pitch - 7
                 if shifted >= self.config.min_pitch:
                     n.pitch = shifted
                     print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
-            # オクターブ倍音の補正 - min_pitch=50に対応して範囲調整
-            elif 62 <= n.pitch <= 74:  # 範囲を52-65→62-74に調整
+            # オクターブ倍音の補正 - 境界チェックでmin_pitch未満への移動を防止
+            elif 52 <= n.pitch <= 65:
                 shifted = n.pitch - 12
                 if shifted >= self.config.min_pitch:
                     n.pitch = shifted
@@ -451,11 +452,11 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.45,      # 0.5 -> 0.45: さらに感度を上げて曲の開始部分を検出
-                frame_threshold=0.35,      # 0.4 -> 0.35: フレーム検出も緩和
-                minimum_note_length=60.0,  # 80ms -> 60ms: より短い音符も検出
-                minimum_frequency=147.0,   # 100Hz -> 147Hz: D3(147Hz=5弦開放)以上、6弦完全除外
-                maximum_frequency=880.0,   # 950Hz -> 880Hz: A5まで、さらに倍音を制限
+                onset_threshold=0.45,      # さらに感度を上げて曲の開始部分を検出
+                frame_threshold=0.35,      # フレーム検出も緩和
+                minimum_note_length=60.0,  # より短い音符も検出
+                minimum_frequency=110.0,   # A2(110Hz=5弦開放)以上、6弦はハードブロックで除外
+                maximum_frequency=880.0,   # A5まで、さらに倍音を制限
             )
 
         # BPM推定 (librosa)

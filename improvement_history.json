@@ -144,5 +144,16 @@
       "string_selection_hard_block": "6弦をpossible_positionsから完全除外 - ペナルティ方式から強制ブロック方式に変更"
     },
     "note": "CRITICAL: Iteration 12でも6弦音符（fis\\6）が残存。ペナルティ100.0でも不十分。根本的解決: 弦選択ループで`if s == 6: continue`を追加し、6弦をpossible_positionsから完全除外。これで6弦選択は物理的に不可能。"
+  },
+  {
+    "iteration": 14,
+    "accuracy": null,
+    "timestamp": "2026-01-08T19:00:00.000000",
+    "changes": {
+      "min_pitch_restored": "50 (D3) → 45 (A2): 5弦開放を検出可能に戻す（6弦はハードブロックで除外済み）",
+      "minimum_frequency_restored": "147Hz → 110Hz: A2周波数に対応",
+      "harmonic_correction_v6": "v5の範囲(57-62, 62-74)をv4の範囲(46-51, 52-65)に復元、境界チェックでmin_pitch=45保護"
+    },
+    "note": "CRITICAL FIX: Ground truth分析で判明 - 5弦開放(A2, pitch=45)がmin_pitch=50で除外されていた！Iteration 13で6弦ハードブロックが成功したため、min_pitchを45に安全に戻して5弦音符を検出可能に。"
   }
 ]
