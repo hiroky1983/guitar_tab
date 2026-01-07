@@ -173,5 +173,14 @@
       "chord_deduplication": "和音グループ内で同じpitchが複数検出された場合、重複を除去して最初の1つだけ保持"
     },
     "note": "ROOT CAUSE: Iteration 15のscope修正では偽和音が解消せず。真の原因は_detect_simultaneous_notesが3ms以内に同じpitchを複数検出すること(例: <e\\5 e\\5 e\\5>)。和音グループ処理前にpitch重複除去を追加 - unique_pitches辞書で最初の出現のみ保持。"
+  },
+  {
+    "iteration": 17,
+    "accuracy": null,
+    "timestamp": "2026-01-08T20:30:00.000000",
+    "changes": {
+      "lilypond_chord_deduplication": "tab_format.py:to_lilypond()の和音生成で同じ弦が複数回出現するのを防止 - used_strings setで既出の弦をスキップ"
+    },
+    "note": "ROOT CAUSE特定: Iteration 16のtranscriber.py修正では偽和音が解消せず。真の原因はtab_format.pyのto_lilypond()関数がLilyPond和音生成時に同じ弦の重複をチェックしていなかった。複数のtab_eventsが同じstart時刻+同じ弦で存在すると<d\\4 d\\4>が生成される。valid_notes生成時にused_stringsでフィルタ追加。"
   }
 ]

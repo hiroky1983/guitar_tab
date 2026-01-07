@@ -335,11 +335,16 @@ class TabResult:
             # 音符の生成
             # 和音かどうかで分岐
             valid_notes = []
+            used_strings = set()  # 和音内で既に使用された弦を記録
             for item in group:
                 e = item["event"]
+                # 同じ弦が既に使用されている場合はスキップ（偽和音防止）
+                if e.string in used_strings:
+                    continue
                 pitch = open_strings[e.string] + e.fret
                 if 40 <= pitch <= 88:
                     valid_notes.append((pitch, e.string))
+                    used_strings.add(e.string)
             
             if not valid_notes:
                 continue
