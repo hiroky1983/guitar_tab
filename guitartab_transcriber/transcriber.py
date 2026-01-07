@@ -15,7 +15,7 @@ from .youtube import download_youtube_audio
 class TranscriptionConfig:
     tuning: Literal["E_standard", "Drop_D"] = "E_standard"
     sample_rate: int = 44100
-    min_pitch: int = 45  # A2 (5弦開放) - 40から45に変更してベース音を除外
+    min_pitch: int = 50  # D3 (5弦開放) - 45→50で6弦音域を完全除外
     max_pitch: int = 84  # C6 (1弦20フレット相当) - 88から84に変更して倍音ノイズを削減
 
 
@@ -72,17 +72,17 @@ class Transcriber:
         # 倍音補正を改善: より精密なゾーン分けと条件付き補正
         # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root) ただし、ベロシティが低い場合のみ
         # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root) より広範囲に適用
-        print("Applying harmonic correction v4...")
+        print("Applying harmonic correction v5...")
         for n in notes:
             original = n.pitch
-            # 5度倍音の補正 - ベロシティが低い場合のみ適用、さらに厳しく
-            if 46 <= n.pitch <= 51 and n.velocity < 0.5:  # 0.7 -> 0.5: より保守的に
+            # 5度倍音の補正 - ベロシティが低い場合のみ適用、min_pitch=50に対応
+            if 57 <= n.pitch <= 62 and n.velocity < 0.5:  # 範囲を46-51→57-62に調整
                 shifted = n.pitch - 7
                 if shifted >= self.config.min_pitch:
                     n.pitch = shifted
                     print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
-            # オクターブ倍音の補正 - min_pitchを下回らないようチェック
-            elif 52 <= n.pitch <= 65:
+            # オクターブ倍音の補正 - min_pitch=50に対応して範囲調整
+            elif 62 <= n.pitch <= 74:  # 範囲を52-65→62-74に調整
                 shifted = n.pitch - 12
                 if shifted >= self.config.min_pitch:
                     n.pitch = shifted
@@ -454,7 +454,7 @@ class Transcriber:
                 onset_threshold=0.5,       # 0.55 -> 0.5: さらに緩和して初期の音符を検出
                 frame_threshold=0.4,       # 0.45 -> 0.4: フレーム検出も緩和
                 minimum_note_length=80.0,  # 100ms -> 80ms: より短い音符も検出
-                minimum_frequency=100.0,   # 38Hz -> 100Hz: A2(110Hz)付近から検出、ベース音を完全除外
+                minimum_frequency=147.0,   # 100Hz -> 147Hz: D3(147Hz=5弦開放)以上、6弦完全除外
                 maximum_frequency=880.0,   # 950Hz -> 880Hz: A5まで、さらに倍音を制限
             )
 
