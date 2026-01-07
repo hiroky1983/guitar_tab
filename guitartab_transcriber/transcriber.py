@@ -15,7 +15,7 @@ from .youtube import download_youtube_audio
 class TranscriptionConfig:
     tuning: Literal["E_standard", "Drop_D"] = "E_standard"
     sample_rate: int = 44100
-    min_pitch: int = 40  # E2 (6弦開放)
+    min_pitch: int = 45  # A2 (5弦開放) - 40から45に変更してベース音を除外
     max_pitch: int = 84  # C6 (1弦20フレット相当) - 88から84に変更して倍音ノイズを削減
 
 
@@ -440,11 +440,11 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.35,      # 0.4 -> 0.35: さらに感度を上げて、ミュート音などを拾いやすくする
-                frame_threshold=0.25,      # 0.3 -> 0.25: フレーム検出の感度を上げる
-                minimum_note_length=25.0,  # 30ms -> 25ms: より細かい刻みを拾う
-                minimum_frequency=38.0,    # 40Hz -> 38Hz: より低音を拾う(E1=41Hz周辺)
-                maximum_frequency=950.0,   # 1000Hz -> 950Hz: 倍音対策を強化
+                onset_threshold=0.5,       # 0.35 -> 0.5: 閾値を上げて確実な音のみ検出（過検出を防ぐ）
+                frame_threshold=0.4,       # 0.25 -> 0.4: フレーム検出も厳しく
+                minimum_note_length=50.0,  # 25ms -> 50ms: 極端に短い音を除外
+                minimum_frequency=100.0,   # 38Hz -> 100Hz: A2(110Hz)付近から検出、ベース音を完全除外
+                maximum_frequency=880.0,   # 950Hz -> 880Hz: A5まで、さらに倍音を制限
             )
 
         # BPM推定 (librosa)
@@ -507,37 +507,46 @@ class Transcriber:
                 filtered_notes.append(group[0])
                 continue
                 
-            # 倍音除去ロジック
+            # 倍音除去ロジック - 強化版
             # 低い音順にソート
             group.sort(key=lambda n: n.pitch)
-            
+
             kept_notes = []
             # 一番低い音は（ベース音として）必ず残す
             root = group[0]
             kept_notes.append(root)
-            
+
+            # 単音の場合が多いので、グループサイズが小さい場合は全て残す
+            if len(group) <= 2:
+                filtered_notes.extend(group)
+                continue
+
             for i in range(1, len(group)):
                 note = group[i]
                 is_harmonic = False
-                
+
                 # ルート音との比較
                 interval = note.pitch - root.pitch
-                
+
+                # 倍音判定を厳しく - より多くの倍音を除外
                 # オクターブ (12, 24) や 完全5度 (7, 19) は倍音の可能性が高い
-                # 特に音量がルートより小さい場合はノイズとみなす
                 if interval in [12, 24, 7, 19]:
-                    if note.velocity < root.velocity * 0.8: # ルートより明らかに弱い
+                    if note.velocity < root.velocity * 0.9: # 基準を0.8→0.9に厳しく
                         is_harmonic = True
-                
-                # 3度 (4, 16) も歪みで出やすいが、和音の構成音かもしれないので慎重に
-                # ここでは「非常に弱い」場合のみ消す
+
+                # 3度 (4, 16) も積極的に除外
                 if interval in [4, 16]:
-                    if note.velocity < root.velocity * 0.5:
+                    if note.velocity < root.velocity * 0.7: # 0.5→0.7に厳しく
+                        is_harmonic = True
+
+                # 2度 (2, 14) や6度 (9, 21) など不協和音程も倍音ノイズの可能性
+                if interval in [2, 14, 9, 21]:
+                    if note.velocity < root.velocity * 0.8:
                         is_harmonic = True
 
                 if not is_harmonic:
                     kept_notes.append(note)
-            
+
             filtered_notes.extend(kept_notes)
 
         # 3. 最終的なゴミ掃除 - 改善版 v2
@@ -568,9 +577,10 @@ class Transcriber:
 
         return final_result
 
-    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.05) -> List[List[Note]]:
+    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.02) -> List[List[Note]]:
         """
         同時発音している音符をグループ化する（和音検出）
+        時間窓を20msに縮小 - 過剰な和音検出を防ぐ
         """
         if not notes:
             return []
@@ -579,7 +589,7 @@ class Transcriber:
         current_group = [notes[0]]
 
         for i in range(1, len(notes)):
-            # 前の音符との時間差
+            # 前の音符との時間差 - より厳密に判定
             if abs(notes[i].start - current_group[0].start) < time_window:
                 current_group.append(notes[i])
             else:
@@ -643,7 +653,8 @@ class Transcriber:
                     string_num = pos["string"]
 
                     # 1. 開放弦ボーナス（ロック曲では開放弦を積極的に使う）
-                    open_string_bonus = -3 if fret == 0 else 0
+                    # ボーナスを-3→-5に強化して開放弦を最優先
+                    open_string_bonus = -5 if fret == 0 else 0
 
                     # 2. フレット移動コスト
                     if fret == 0:
@@ -665,8 +676,14 @@ class Transcriber:
                         # 7フレット以上も少しペナルティ（ローポジション優先）
                         high_fret_penalty = (fret - 7) * 0.5
 
-                    # 4. 弦の優先度（低い弦を優先するロック/メタルスタイル）
-                    string_preference = (7 - string_num) * 0.3  # 6弦が最優先
+                    # 4. 弦の優先度（中音弦を優先 - 5,4,3弦を好む）
+                    # 6弦にペナルティ（ベース音を避ける）
+                    if string_num == 6:
+                        string_preference = 5.0  # 6弦に大きなペナルティ
+                    elif string_num in [5, 4, 3]:
+                        string_preference = -1.0  # 5,4,3弦にボーナス
+                    else:
+                        string_preference = 0.0
 
                     # 5. 和音内での弦の重複を避けるボーナス
                     string_conflict_penalty = 0 if s not in used_strings_in_chord else 100
