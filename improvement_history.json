@@ -117,5 +117,14 @@
       "harmonic_correction_v5": "5度補正範囲 46-51→57-62, オクターブ補正範囲 52-65→62-74 (min_pitch=50に適応)"
     },
     "note": "CRITICAL: Iteration 9で6弦音符(cis\\6, pitch=49)が出現。min_pitch=45では不十分だった。min_pitch=50 (D3=5弦開放)に引き上げて6弦音域を完全除外。"
+  },
+  {
+    "iteration": 11,
+    "accuracy": null,
+    "timestamp": "2026-01-08T17:30:00.000000",
+    "changes": {
+      "basic_pitch_maximum_sensitivity": "onset_threshold 0.5→0.45, frame_threshold 0.4→0.35, minimum_note_length 80ms→60ms"
+    },
+    "note": "Iteration 10の最初の音符が3.118s（ground truthは0.0s）。曲の開始部分を検出できていない。さらに感度を上げて早期の音符を検出。min_pitch=50保護は維持。"
   }
 ]
