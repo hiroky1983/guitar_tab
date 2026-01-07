@@ -126,5 +126,14 @@
       "basic_pitch_maximum_sensitivity": "onset_threshold 0.5→0.45, frame_threshold 0.4→0.35, minimum_note_length 80ms→60ms"
     },
     "note": "Iteration 10の最初の音符が3.118s（ground truthは0.0s）。曲の開始部分を検出できていない。さらに感度を上げて早期の音符を検出。min_pitch=50保護は維持。"
+  },
+  {
+    "iteration": 12,
+    "accuracy": null,
+    "timestamp": "2026-01-08T18:00:00.000000",
+    "changes": {
+      "string_selection_6th_penalty": "6弦ペナルティ 5.0 → 100.0: 実質的に6弦使用禁止"
+    },
+    "note": "CRITICAL: Iteration 11で6弦14フレット（pitch 54 = F#3）が再出現。pitch>=min_pitchでフィルタ通過したが、弦選択アルゴリズムが6弦を選択。ペナルティを100.0に大幅増加して6弦選択を実質禁止。"
   }
 ]
