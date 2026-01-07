@@ -211,11 +211,20 @@
   },
   {
     "iteration": 21,
-    "accuracy": null,
+    "accuracy": 0.0588,
     "timestamp": "2026-01-08T22:30:00.000000",
     "changes": {
       "disable_drum_snapping": "ドラムビートへのスナッピングを無効化 - 量子化が0.256s間隔パターンを完全に破壊していた"
     },
-    "note": "ROOT CAUSE特定: Iteration 20の詳細分析で、generated outputに0.256s/0.512s付近の音符が0個と判明。ドラムビートスナッピングが量子化を破壊。一時的に無効化してraw timingを使用し、Basic Pitchの生の検出結果を評価。"
+    "note": "ROOT CAUSE特定: Iteration 20の詳細分析で、generated outputに0.256s/0.512s付近の音符が0個と判明。ドラムビートスナッピングが量子化を破壊。一時的に無効化してraw timingを使用し、Basic Pitchの生の検出結果を評価。精度5.88%維持（改善なし）。"
+  },
+  {
+    "iteration": 22,
+    "accuracy": 0.0588,
+    "timestamp": "2026-01-08T23:00:00.000000",
+    "changes": {
+      "analysis_only": "Ground truthと音声ファイルの対応関係を詳細調査"
+    },
+    "note": "CRITICAL発見: (1) Ground truthは曲の最初の5%のみ (4.352s/86.17s), (2) G3 (pitch 55) はGenerated outputに存在するが、タイミングが1秒以上ずれている (GT: 0.512s, 1.280s, 2.048s vs GEN: 1.847s, 3.834s), (3) 最初の3秒間のピッチ分布: A2過剰検出(6 vs GT 3), D3 under-detect(2 vs GT 3), G3 大幅under-detect(1 vs GT 3). Ground truthと音声ファイルの対応関係に根本的な問題がある可能性。これ以上の自動改善は困難。"
   }
 ]
