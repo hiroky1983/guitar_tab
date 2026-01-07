@@ -155,5 +155,14 @@
       "harmonic_correction_v6": "v5の範囲(57-62, 62-74)をv4の範囲(46-51, 52-65)に復元、境界チェックでmin_pitch=45保護"
     },
     "note": "CRITICAL FIX: Ground truth分析で判明 - 5弦開放(A2, pitch=45)がmin_pitch=50で除外されていた！Iteration 13で6弦ハードブロックが成功したため、min_pitchを45に安全に戻して5弦音符を検出可能に。"
+  },
+  {
+    "iteration": 15,
+    "accuracy": null,
+    "timestamp": "2026-01-08T19:30:00.000000",
+    "changes": {
+      "string_conflict_penalty_bugfix": "calculate_cost内のstring_conflict_penalty計算で変数スコープエラー修正: `s` → `string_num`"
+    },
+    "note": "CRITICAL BUGFIX: 偽和音<d\\4 d\\4>の原因を特定 - calculate_cost関数がouterループ変数`s`を参照していたため、評価時に間違った弦番号でコンフリクトチェック。`string_num`に修正して同一弦の重複を正しく防止。"
   }
 ]

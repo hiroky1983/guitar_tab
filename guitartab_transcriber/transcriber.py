@@ -701,8 +701,8 @@ class Transcriber:
                     else:
                         string_preference = 0.0
 
-                    # 5. 和音内での弦の重複を避けるボーナス
-                    string_conflict_penalty = 0 if s not in used_strings_in_chord else 100
+                    # 5. 和音内での弦の重複を避けるボーナス（BUGFIX: s -> string_num）
+                    string_conflict_penalty = 0 if string_num not in used_strings_in_chord else 100
 
                     return fret_dist + high_fret_penalty + string_preference + open_string_bonus + string_conflict_penalty
 
