@@ -59,5 +59,19 @@
       "processing_pipeline": "Added 3 post-processing stages: velocity normalization → duration refinement → position optimization"
     },
     "note": "Focus on playability and musical expression - smoother fingering transitions and consistent dynamics"
+  },
+  {
+    "iteration": 6,
+    "accuracy": null,
+    "timestamp": "2026-01-08T06:40:00.000000",
+    "changes": {
+      "basic_pitch_conservative": "Raised thresholds to reduce over-detection: onset 0.35→0.5, frame 0.25→0.4, note_length 25→50ms",
+      "frequency_range_narrowed": "min_frequency 38Hz→100Hz (exclude bass), max_frequency 950Hz→880Hz (limit harmonics)",
+      "chord_detection_strict": "Time window 50ms→20ms to prevent false chord grouping",
+      "string_preference_refined": "6th string +5.0 penalty (avoid bass), 5/4/3 strings -1.0 bonus, open_string_bonus -3→-5",
+      "harmonic_removal_enhanced": "Stricter velocity thresholds (0.8→0.9), added 2nd/6th interval filtering, protect ≤2 note groups",
+      "min_pitch_config": "Config min_pitch 40→45 (E2→A2) to exclude bass entirely"
+    },
+    "note": "CRITICAL: Based on actual test results showing over-detection. Ground truth = simple open strings (5,4,3), output had complex chords and 6th string. Fixed bass contamination and harmonic over-detection."
   }
 ]
