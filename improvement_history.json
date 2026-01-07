@@ -135,5 +135,14 @@
       "string_selection_6th_penalty": "6弦ペナルティ 5.0 → 100.0: 実質的に6弦使用禁止"
     },
     "note": "CRITICAL: Iteration 11で6弦14フレット（pitch 54 = F#3）が再出現。pitch>=min_pitchでフィルタ通過したが、弦選択アルゴリズムが6弦を選択。ペナルティを100.0に大幅増加して6弦選択を実質禁止。"
+  },
+  {
+    "iteration": 13,
+    "accuracy": null,
+    "timestamp": "2026-01-08T18:30:00.000000",
+    "changes": {
+      "string_selection_hard_block": "6弦をpossible_positionsから完全除外 - ペナルティ方式から強制ブロック方式に変更"
+    },
+    "note": "CRITICAL: Iteration 12でも6弦音符（fis\\6）が残存。ペナルティ100.0でも不十分。根本的解決: 弦選択ループで`if s == 6: continue`を追加し、6弦をpossible_positionsから完全除外。これで6弦選択は物理的に不可能。"
   }
 ]
