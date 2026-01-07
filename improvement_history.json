@@ -192,12 +192,21 @@
   },
   {
     "iteration": 19,
-    "accuracy": null,
+    "accuracy": 0.0588,
     "timestamp": "2026-01-08T21:30:00.000000",
     "changes": {
       "basic_pitch_ultra_conservative": "過剰検出対策: onset_threshold 0.45→0.70, frame_threshold 0.35→0.60, minimum_note_length 60ms→150ms",
       "timing_reference_change": "タイミング基準を変更: 最初のドラムビート → 最初のギター音符。これにより初期オフセット問題を解決"
     },
-    "note": "Iteration 18の0%精度から根本的改善。過剰検出(646音符)を解決するため、Basic Pitchパラメータを大幅に保守的に設定。タイミングオフセット(+0.392s)を解決するため、ドラムビート基準をやめて最初のギター音符を時間0として使用。"
+    "note": "Iteration 18の0%精度から根本的改善。過剰検出(646音符→44音符)を解決、タイミングオフセット(+0.392s→0.0s)を解決。精度5.88%(1/17マッチ)。しかし閾値が保守的すぎて、0.256s間隔の高速パッセージ(17音符)のうち16音符を見逃した。"
+  },
+  {
+    "iteration": 20,
+    "accuracy": null,
+    "timestamp": "2026-01-08T22:00:00.000000",
+    "changes": {
+      "basic_pitch_balanced": "高速パッセージ検出のためバランス調整: onset_threshold 0.70→0.50, frame_threshold 0.60→0.40, minimum_note_length 150ms→50ms"
+    },
+    "note": "CRITICAL発見: Ground truthは0.256s間隔の高速パッセージ(17音符を4.352秒で演奏、約220BPM相当)。Iteration 19のminimum_note_length=150msでは短すぎて検出不可。50msに引き下げて短い音符を検出可能に。閾値も0.50に下げて感度向上。"
   }
 ]

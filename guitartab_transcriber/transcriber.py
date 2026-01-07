@@ -453,9 +453,9 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.70,      # 過剰検出防止: 大幅に保守的に (0.45→0.70)
-                frame_threshold=0.60,      # フレーム検出も厳格化 (0.35→0.60)
-                minimum_note_length=150.0, # 短い音符を除外 (60ms→150ms)
+                onset_threshold=0.50,      # 速いパッセージ検出のためバランス調整 (0.70→0.50)
+                frame_threshold=0.40,      # フレーム検出も調整 (0.60→0.40)
+                minimum_note_length=50.0,  # 短い音符も検出 (150ms→50ms, 256ms間隔のパッセージ対応)
                 minimum_frequency=110.0,   # A2(110Hz=5弦開放)以上、6弦はハードブロックで除外
                 maximum_frequency=880.0,   # A5まで、さらに倍音を制限
             )
