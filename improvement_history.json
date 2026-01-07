@@ -96,5 +96,15 @@
       "chord_detection_ultra_strict": "Time window 10ms→5ms in both _filter_notes and _detect_simultaneous_notes"
     },
     "note": "Iteration 7 was too conservative - missing notes, creating gaps/rests. Rebalanced to detect more notes while maintaining pitch range protections from iteration 7."
+  },
+  {
+    "iteration": 9,
+    "accuracy": null,
+    "timestamp": "2026-01-08T16:30:00.000000",
+    "changes": {
+      "basic_pitch_more_sensitive": "onset_threshold 0.55→0.5, frame_threshold 0.45→0.4, minimum_note_length 100ms→80ms",
+      "chord_detection_absolute_minimum": "Time window 5ms→3ms in both _filter_notes and _detect_simultaneous_notes"
+    },
+    "note": "Iteration 8 had too many rests/gaps and missed early notes. Further increased sensitivity to detect more notes (especially at song start) while using ultra-strict 3ms chord window to eliminate false chords."
   }
 ]
