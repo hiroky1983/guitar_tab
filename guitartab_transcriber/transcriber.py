@@ -72,17 +72,28 @@ class Transcriber:
         # 倍音補正を改善: より精密なゾーン分けと条件付き補正
         # Zone 1: 5度倍音 (B2~Eb3) -> -7 (Root) ただし、ベロシティが低い場合のみ
         # Zone 2: オクターブ倍音 (E3~E4) -> -12 (Root) より広範囲に適用
-        print("Applying harmonic correction v3...")
+        print("Applying harmonic correction v4...")
         for n in notes:
             original = n.pitch
-            # 5度倍音の補正 - ベロシティが低い場合のみ適用
-            if 46 <= n.pitch <= 51 and n.velocity < 0.7:
-                n.pitch -= 7
-                print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
-            # オクターブ倍音の補正 - より積極的に適用
+            # 5度倍音の補正 - ベロシティが低い場合のみ適用、さらに厳しく
+            if 46 <= n.pitch <= 51 and n.velocity < 0.5:  # 0.7 -> 0.5: より保守的に
+                shifted = n.pitch - 7
+                if shifted >= self.config.min_pitch:
+                    n.pitch = shifted
+                    print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
+            # オクターブ倍音の補正 - min_pitchを下回らないようチェック
             elif 52 <= n.pitch <= 65:
-                n.pitch -= 12
-                print(f"Shifted note {original} -> {n.pitch} (Octave -> Root)")
+                shifted = n.pitch - 12
+                if shifted >= self.config.min_pitch:
+                    n.pitch = shifted
+                    print(f"Shifted note {original} -> {n.pitch} (Octave -> Root)")
+                else:
+                    # min_pitch未満になる場合は除外候補（後のフィルタで削除）
+                    print(f"Skipped octave shift {original} -> {shifted} (below min_pitch={self.config.min_pitch})")
+
+        # 3.5. 倍音補正後の再フィルタ: シフトされなかった高音や範囲外の音を除外
+        notes = [n for n in notes if self.config.min_pitch <= n.pitch <= self.config.max_pitch]
+        print(f"After harmonic correction: {len(notes)} notes remain")
 
         # 4. パームミュート検出
         # ロック/メタルで頻出するパームミュートを検出してマーク
@@ -440,9 +451,9 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.5,       # 0.35 -> 0.5: 閾値を上げて確実な音のみ検出（過検出を防ぐ）
-                frame_threshold=0.4,       # 0.25 -> 0.4: フレーム検出も厳しく
-                minimum_note_length=50.0,  # 25ms -> 50ms: 極端に短い音を除外
+                onset_threshold=0.6,       # 0.5 -> 0.6: さらに保守的に（確実な音のみ）
+                frame_threshold=0.5,       # 0.4 -> 0.5: フレーム検出をさらに厳しく
+                minimum_note_length=127.5, # 50ms -> 127.5ms: 16分音符相当（117BPM）を最小とする
                 minimum_frequency=100.0,   # 38Hz -> 100Hz: A2(110Hz)付近から検出、ベース音を完全除外
                 maximum_frequency=880.0,   # 950Hz -> 880Hz: A5まで、さらに倍音を制限
             )
@@ -493,7 +504,7 @@ class Transcriber:
             
         current_group = [notes[0]]
         for i in range(1, len(notes)):
-            if abs(notes[i].start - current_group[0].start) < 0.05:
+            if abs(notes[i].start - current_group[0].start) < 0.01:  # 50ms -> 10ms: より厳しく
                 current_group.append(notes[i])
             else:
                 groups.append(current_group)
@@ -577,10 +588,10 @@ class Transcriber:
 
         return final_result
 
-    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.02) -> List[List[Note]]:
+    def _detect_simultaneous_notes(self, notes: List[Note], time_window: float = 0.01) -> List[List[Note]]:
         """
         同時発音している音符をグループ化する（和音検出）
-        時間窓を20msに縮小 - 過剰な和音検出を防ぐ
+        時間窓を10msに縮小 - さらに厳しく過剰な和音検出を防ぐ
         """
         if not notes:
             return []
