@@ -106,5 +106,16 @@
       "chord_detection_absolute_minimum": "Time window 5ms→3ms in both _filter_notes and _detect_simultaneous_notes"
     },
     "note": "Iteration 8 had too many rests/gaps and missed early notes. Further increased sensitivity to detect more notes (especially at song start) while using ultra-strict 3ms chord window to eliminate false chords."
+  },
+  {
+    "iteration": 10,
+    "accuracy": null,
+    "timestamp": "2026-01-08T17:00:00.000000",
+    "changes": {
+      "min_pitch_raised": "45 (A2) → 50 (D3, 5弦開放): 6弦音域を完全除外",
+      "minimum_frequency_raised": "100Hz → 147Hz (D3に対応)",
+      "harmonic_correction_v5": "5度補正範囲 46-51→57-62, オクターブ補正範囲 52-65→62-74 (min_pitch=50に適応)"
+    },
+    "note": "CRITICAL: Iteration 9で6弦音符(cis\\6, pitch=49)が出現。min_pitch=45では不十分だった。min_pitch=50 (D3=5弦開放)に引き上げて6弦音域を完全除外。"
   }
 ]
