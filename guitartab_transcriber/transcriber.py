@@ -110,14 +110,122 @@ class Transcriber:
 
         # ノイズ除去
         filtered_notes = self._filter_notes(snapped_notes)
-        
-        print(f"\n--- First 10 Filtered Notes ---")
+
+        # 6. ベロシティ正規化（音量のばらつきを整える）
+        print("Normalizing note velocities...")
+        filtered_notes = self._normalize_velocities(filtered_notes)
+
+        # 7. 音符長の精密化（短すぎる/長すぎる音符を調整）
+        print("Refining note durations...")
+        filtered_notes = self._refine_durations(filtered_notes, final_bpm)
+
+        print(f"\n--- First 10 Processed Notes ---")
         for i, n in enumerate(filtered_notes[:10]):
-            print(f"Note {i}: Start={n.start:.3f}, Pitch={n.pitch}, Vel={n.velocity:.2f}")
+            print(f"Note {i}: Start={n.start:.3f}, Pitch={n.pitch}, Vel={n.velocity:.2f}, Dur={n.end-n.start:.3f}")
         print("-------------------------------\n")
-        
+
         events = self._notes_to_guitar_positions(filtered_notes)
+
+        # 8. ポジションシフトの最適化（後処理）
+        print("Optimizing position shifts...")
+        events = self._optimize_position_shifts(events)
+
         return TabResult.from_tab_events(events, bpm=final_bpm)
+
+    def _normalize_velocities(self, notes: List[Note]) -> List[Note]:
+        """
+        ベロシティ（音量）の正規化
+        - 極端に大きい/小さい値を調整
+        - より一貫した音量表現にする
+        """
+        if not notes:
+            return notes
+
+        velocities = [n.velocity for n in notes]
+        if not velocities:
+            return notes
+
+        # 統計値を計算
+        mean_vel = sum(velocities) / len(velocities)
+        max_vel = max(velocities)
+        min_vel = min(velocities)
+
+        # 正規化範囲: 0.3 - 0.9 (極端な値を避ける)
+        target_min = 0.3
+        target_max = 0.9
+
+        normalized_notes = []
+        for n in notes:
+            # 線形正規化
+            if max_vel > min_vel:
+                normalized_vel = target_min + (n.velocity - min_vel) / (max_vel - min_vel) * (target_max - target_min)
+            else:
+                normalized_vel = (target_min + target_max) / 2
+
+            # クリップ
+            normalized_vel = max(target_min, min(target_max, normalized_vel))
+
+            normalized_notes.append(Note(
+                start=n.start,
+                end=n.end,
+                pitch=n.pitch,
+                velocity=normalized_vel
+            ))
+
+        return normalized_notes
+
+    def _refine_durations(self, notes: List[Note], bpm: float) -> List[Note]:
+        """
+        音符の長さを精密化
+        - 極端に短い/長い音符を調整
+        - 音楽的に意味のある長さにする
+        """
+        if not notes:
+            return notes
+
+        beat_interval = 60.0 / bpm
+        # 最小長: 32分音符
+        min_duration = beat_interval / 8.0
+        # 最大長: 全音符
+        max_duration = beat_interval * 4.0
+
+        refined_notes = []
+        for i, n in enumerate(notes):
+            duration = n.end - n.start
+
+            # 次の音符との間隔をチェック
+            if i < len(notes) - 1:
+                next_note = notes[i + 1]
+                gap_to_next = next_note.start - n.end
+
+                # 次の音符まで余裕がない場合、音符を短くする
+                if gap_to_next < 0.01:
+                    # 重なっている場合は短くする
+                    new_duration = max(min_duration, n.end - n.start - 0.02)
+                    refined_notes.append(Note(
+                        start=n.start,
+                        end=n.start + new_duration,
+                        pitch=n.pitch,
+                        velocity=n.velocity
+                    ))
+                    continue
+
+            # 長さの調整
+            if duration < min_duration:
+                new_duration = min_duration
+            elif duration > max_duration:
+                new_duration = max_duration
+            else:
+                new_duration = duration
+
+            refined_notes.append(Note(
+                start=n.start,
+                end=n.start + new_duration,
+                pitch=n.pitch,
+                velocity=n.velocity
+            ))
+
+        return refined_notes
 
     def _detect_palm_mutes(self, notes: List[Note]) -> List[Note]:
         """
@@ -586,3 +694,70 @@ class Transcriber:
                     current_hand_pos = best_pos["fret"]
 
         return tab_events
+
+    def _optimize_position_shifts(self, events: list[dict]) -> list[dict]:
+        """
+        ポジションシフト（手の移動）を最適化
+        - 不要な大きなシフトを削減
+        - 連続する音符で同じポジションを維持できる場合は維持
+        - より滑らかな運指を実現
+        """
+        if len(events) <= 1:
+            return events
+
+        optimized = []
+
+        # 開放弦のMIDIピッチ
+        open_strings = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
+
+        for i, event in enumerate(events):
+            if i == 0:
+                optimized.append(event)
+                continue
+
+            prev_event = optimized[-1]
+
+            # 同じ音符が連続する場合、同じ弦を使う（トレモロピッキング対応）
+            if event["string"] != prev_event["string"]:
+                # 前の音符と音程が近い場合、同じポジション付近を維持できるか確認
+                pitch_diff = abs((event["fret"] + open_strings[event["string"]]) -
+                                (prev_event["fret"] + open_strings[prev_event["string"]]))
+
+                # 音程差が小さい（半音〜全音）場合
+                if pitch_diff <= 2:
+                    # 同じ弦で弾けるか確認
+                    for string, open_pitch in open_strings.items():
+                        alt_fret = (event["fret"] + open_strings[event["string"]]) - open_pitch
+
+                        # 前の音符と同じ弦で、かつフレット範囲内
+                        if string == prev_event["string"] and 0 <= alt_fret <= 20:
+                            # ポジション移動が小さくなる場合は変更
+                            if abs(alt_fret - prev_event["fret"]) < abs(event["fret"] - prev_event["fret"]):
+                                event = {
+                                    "string": string,
+                                    "fret": alt_fret,
+                                    "start": event["start"],
+                                    "end": event["end"]
+                                }
+                                break
+
+            # 大きなポジションシフト（5フレット以上）を検出して警告
+            if event["string"] == prev_event["string"]:
+                fret_shift = abs(event["fret"] - prev_event["fret"])
+                if fret_shift > 5:
+                    # 開放弦を使えば避けられないかチェック
+                    for string, open_pitch in open_strings.items():
+                        alt_fret = (event["fret"] + open_strings[event["string"]]) - open_pitch
+                        if string != event["string"] and alt_fret == 0:
+                            # 開放弦で同じ音が出せる
+                            event = {
+                                "string": string,
+                                "fret": 0,
+                                "start": event["start"],
+                                "end": event["end"]
+                            }
+                            break
+
+            optimized.append(event)
+
+        return optimized

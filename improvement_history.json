@@ -46,5 +46,18 @@
       "pitch_range_optimization": "Reduced max_pitch from 88 to 84 to minimize high-frequency harmonic noise"
     },
     "note": "Enhanced palm mute handling and BPM accuracy - critical for rock/metal transcription"
+  },
+  {
+    "iteration": 5,
+    "accuracy": null,
+    "timestamp": "2026-01-07T22:45:00.000000",
+    "changes": {
+      "velocity_normalization": "New _normalize_velocities() method: normalizes velocity range to 0.3-0.9 for consistent dynamics",
+      "duration_refinement": "New _refine_durations() method: ensures durations are within 32nd note to whole note range, handles overlapping notes",
+      "position_optimization": "New _optimize_position_shifts() method: reduces large fret shifts (>5), prefers open strings, maintains position continuity",
+      "tremolo_picking_support": "Position optimizer detects repeated notes and maintains same string usage",
+      "processing_pipeline": "Added 3 post-processing stages: velocity normalization → duration refinement → position optimization"
+    },
+    "note": "Focus on playability and musical expression - smoother fingering transitions and consistent dynamics"
   }
 ]
