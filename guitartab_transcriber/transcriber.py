@@ -690,7 +690,7 @@ class Transcriber:
                     # 4. 弦の優先度（中音弦を優先 - 5,4,3弦を好む）
                     # 6弦にペナルティ（ベース音を避ける）
                     if string_num == 6:
-                        string_preference = 5.0  # 6弦に大きなペナルティ
+                        string_preference = 100.0  # 6弦に極大ペナルティ（実質的に使用禁止）
                     elif string_num in [5, 4, 3]:
                         string_preference = -1.0  # 5,4,3弦にボーナス
                     else:
