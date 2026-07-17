@@ -4,6 +4,7 @@
     python -m guitartab separate   --url <YouTube URL> | --input <audio>
     python -m guitartab tab        <notes.json> [--out-dir DIR]
     python -m guitartab midi       <notes.json> [--out FILE]
+    python -m guitartab musicxml   <tab.json> [--out FILE]
     python -m guitartab eval       [--eval-data eval_data] [--engine basicpitch]
 """
 
@@ -18,11 +19,13 @@ from guitartab.eval.metrics import DEFAULT_ONSET_TOLERANCE_SEC
 from guitartab.pipeline import (
     DEFAULT_WORK_ROOT,
     MIDI_FILENAME,
+    MUSICXML_FILENAME,
     TAB_FILENAME,
     TAB_TEXT_FILENAME,
     run_transcribe_pipeline,
     stage_download,
     stage_midi,
+    stage_musicxml,
     stage_separate,
     stage_tab,
 )
@@ -178,6 +181,21 @@ def cmd_midi(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_musicxml(args: argparse.Namespace) -> int:
+    tab_path = args.tab
+    if not tab_path.exists():
+        raise SystemExit(f"tab.json not found: {tab_path}")
+    out_path = args.out if args.out is not None else tab_path.parent / MUSICXML_FILENAME
+    if "eval_data" in out_path.resolve().parts:
+        raise SystemExit(
+            "output path is inside eval_data/ (frozen GT area); "
+            "use --out to write elsewhere"
+        )
+    stage_musicxml(tab_path, out_path, force=args.force)
+    print(out_path)
+    return 0
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     items = discover_items(args.eval_data)
     if not items:
@@ -266,6 +284,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_mid.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     p_mid.set_defaults(func=cmd_midi)
+
+    p_mxl = sub.add_parser(
+        "musicxml",
+        help="tab.json → MusicXML (output.musicxml, MuseScore / Guitar Pro 連携用)",
+    )
+    p_mxl.add_argument("tab", type=Path, help="入力 tab.json")
+    p_mxl.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=f"出力 MusicXML パス (default: tab.json と同じディレクトリの {MUSICXML_FILENAME})",
+    )
+    p_mxl.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
+    p_mxl.set_defaults(func=cmd_musicxml)
 
     p_ev = sub.add_parser("eval", help="eval_data/ のベンチセットを一括評価")
     # デフォルトは dev セットのみ。holdout（1回限りの最終判定用）を日常のチューニングで

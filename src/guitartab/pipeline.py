@@ -8,6 +8,7 @@
     work/{id}/tab.json            # tab（運指割当）
     work/{id}/tab.txt             # tab（ASCII レンダリング）
     work/{id}/output.mid          # midi（耳で検証する用の MIDI レンダリング）
+    work/{id}/output.musicxml     # musicxml（MuseScore / Guitar Pro 連携用）
 
 既存ファイルがあればステージをスキップし、force=True で再実行する。
 """
@@ -26,6 +27,7 @@ from guitartab.tab.render_ascii import (
     render_ascii,
 )
 from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM, save_midi
+from guitartab.tab.render_musicxml import save_musicxml
 from guitartab.transcribe.base import NoteEvent, TranscriberEngine, load_notes, save_notes
 
 DEFAULT_WORK_ROOT = Path("work")
@@ -34,6 +36,7 @@ STEMS_DIRNAME = "stems"
 TAB_FILENAME = "tab.json"
 TAB_TEXT_FILENAME = "tab.txt"
 MIDI_FILENAME = "output.mid"
+MUSICXML_FILENAME = "output.musicxml"
 
 
 def stage_download(url: str, work_root: Path, *, force: bool = False) -> Path:
@@ -104,6 +107,22 @@ def stage_midi(
     return midi_path
 
 
+def stage_musicxml(
+    tab_path: Path,
+    musicxml_path: Path,
+    *,
+    force: bool = False,
+) -> Path:
+    """tab.json から MusicXML (output.musicxml) を生成する（キャッシュあり）。"""
+    if musicxml_path.exists() and not force:
+        print(f"cached: {musicxml_path}", file=sys.stderr)
+        return musicxml_path
+    tab = load_tab(tab_path)
+    save_musicxml(tab, musicxml_path)
+    print(f"wrote {musicxml_path} ({len(tab)} notes)", file=sys.stderr)
+    return musicxml_path
+
+
 def run_transcribe_pipeline(
     url: str,
     engine: TranscriberEngine,
@@ -112,10 +131,12 @@ def run_transcribe_pipeline(
     separate: bool = True,
     force: bool = False,
 ) -> Path:
-    """download → separate → transcribe → tab → midi を実行し notes.json のパスを返す。
+    """download → separate → transcribe → tab → midi → musicxml を実行し
+    notes.json のパスを返す。
 
     tab ステージの成果物は work/{id}/tab.json と work/{id}/tab.txt、
-    midi ステージの成果物は work/{id}/output.mid に残る。
+    midi ステージは work/{id}/output.mid、musicxml ステージは
+    work/{id}/output.musicxml に残る。
     """
     source = stage_download(url, work_root, force=force)
     work_dir = source.parent
@@ -129,4 +150,5 @@ def run_transcribe_pipeline(
         force=force,
     )
     stage_midi(notes_path, work_dir / MIDI_FILENAME, force=force)
+    stage_musicxml(work_dir / TAB_FILENAME, work_dir / MUSICXML_FILENAME, force=force)
     return notes_path
