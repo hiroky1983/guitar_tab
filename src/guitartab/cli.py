@@ -30,8 +30,9 @@ from guitartab.tab.render_ascii import DEFAULT_LINE_WIDTH, DEFAULT_TIME_STEP_SEC
 from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM
 from guitartab.transcribe.base import TranscriberEngine
 from guitartab.transcribe.basicpitch import BasicPitchEngine
+from guitartab.transcribe.yourmt3 import YourMT3Engine
 
-ENGINE_NAMES = ["basicpitch", "muscriptor"]
+ENGINE_NAMES = ["basicpitch", "yourmt3", "muscriptor"]
 
 
 def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
@@ -44,6 +45,12 @@ def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
             minimum_frequency=args.bp_minimum_frequency,
             maximum_frequency=args.bp_maximum_frequency,
             melodia_trick=False if args.bp_no_melodia_trick else None,
+        )
+    if name == "yourmt3":
+        return YourMT3Engine(
+            venv_python=args.yourmt3_python,
+            home=args.yourmt3_home,
+            device=args.yourmt3_device,
         )
     if name == "muscriptor":
         raise SystemExit(
@@ -61,6 +68,29 @@ def _add_common_engine_args(p: argparse.ArgumentParser) -> None:
         metavar="PYTHON",
         help="basic-pitch 専用 venv の python パス "
         "(default: $GUITARTAB_BASICPITCH_PYTHON or .venv-basicpitch/bin/python)",
+    )
+    ym = p.add_argument_group("yourmt3 params")
+    ym.add_argument(
+        "--yourmt3-python",
+        type=Path,
+        default=None,
+        metavar="PYTHON",
+        help="YourMT3 専用 venv の python パス "
+        "(default: $GUITARTAB_YOURMT3_PYTHON or .venv-yourmt3/bin/python)",
+    )
+    ym.add_argument(
+        "--yourmt3-home",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="YourMT3 コード+チェックポイントのディレクトリ "
+        "(default: $GUITARTAB_YOURMT3_HOME or third_party/yourmt3)",
+    )
+    ym.add_argument(
+        "--yourmt3-device",
+        default=None,
+        metavar="DEV",
+        help="推論デバイス cpu|mps (default: $GUITARTAB_YOURMT3_DEVICE or cpu)",
     )
     # basic_pitch.inference.predict() のネイティブ推論パラメータ。
     # 未指定（None）は predict() のデフォルト = 従来動作。

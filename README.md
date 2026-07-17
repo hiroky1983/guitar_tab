@@ -62,6 +62,35 @@ python -m guitartab transcribe --url <URL> --basicpitch-python /path/to/venv/bin
 （Linux 等 3.11 で basic-pitch が動く環境なら extras `uv pip install -e '.[basicpitch]'` で
 本体 venv に同居させ、`--basicpitch-python .venv/bin/python` を指定する運用も可能です）
 
+### YourMT3+ の運用
+
+YourMT3+ は GPL/Apache 混在ライセンスのため**コード・チェックポイントをリポジトリに
+同梱しません**（`third_party/` は gitignore 済み）。basic-pitch と同じ別 venv
+サブプロセス方式で動かします
+（`src/guitartab/transcribe/yourmt3.py` + `_yourmt3_runner.py`。
+検証記録は `docs/YOURMT3_VERIFICATION_2026-07-17.md`）:
+
+1. コード+チェックポイントを `third_party/yourmt3/` に配置する。
+   実体は HF Space `mimbres/YourMT3`（gated ではない）。必要なのは `amt/` ディレクトリと
+   `amt/logs/2024/mc13_256_g4_all_v7_mt3f_sqr_rms_moe_wf4_n8k2_silu_rope_rp_b36_nops/checkpoints/last.ckpt`
+   （YPTF.MoE+Multi noPS、538MB）。
+2. 専用 venv を作る（Python 3.11、バージョン固定が必要）:
+
+   ```bash
+   uv venv --python 3.11 .venv-yourmt3
+   uv pip install --python .venv-yourmt3/bin/python \
+     torch torchaudio soundfile "transformers==4.45.1" "numpy==1.26.4" \
+     pytorch-lightning einops librosa mido mir_eval
+   ```
+
+   （2026-07-17 動作確認構成: torch 2.13.0 / torchaudio 2.11.0 / lightning 2.6.5 /
+   soundfile 0.14.0。transformers と numpy のピンを外すと壊れる）
+
+場所を変える場合は環境変数 `GUITARTAB_YOURMT3_PYTHON` / `GUITARTAB_YOURMT3_HOME`、
+または CLI の `--yourmt3-python` / `--yourmt3-home` で指定します。推論デバイスは
+デフォルト CPU（M2 では MPS とほぼ同速のため安定側）。`GUITARTAB_YOURMT3_DEVICE=mps`
+または `--yourmt3-device mps` で切替可能です。
+
 ## 使い方
 
 ```bash

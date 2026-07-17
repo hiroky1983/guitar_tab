@@ -3,6 +3,8 @@ __pycache__
 _archive/
 .venv/
 .venv-basicpitch/
+.venv-yourmt3/
+third_party/
 work/
 .pytest_cache/
 .env
