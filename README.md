@@ -38,8 +38,15 @@ guitartab はそこの python をサブプロセスとして呼び出します
 
 ```bash
 uv venv --python 3.10 .venv-basicpitch
-uv pip install --python .venv-basicpitch/bin/python basic-pitch
+uv pip install --python .venv-basicpitch/bin/python basic-pitch "numba<0.61" "llvmlite<0.44" "setuptools<81"
 ```
+
+ピンの理由（2026-07-17 時点、外すと壊れる）:
+
+- `numba<0.61` / `llvmlite<0.44` — 最新 llvmlite (0.48) は Python 3.10 向け wheel がなく
+  ソースビルドに失敗する
+- `setuptools<81` — resampy が `pkg_resources` を import しており、setuptools 81+ では
+  削除済みのため実行時に落ちる
 
 venv の場所はデフォルトでプロジェクト直下の `.venv-basicpitch/bin/python` を探します。
 別の場所に置いた場合は次のどちらかで指定します:
