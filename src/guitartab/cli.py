@@ -3,6 +3,7 @@
     python -m guitartab transcribe --url <YouTube URL>
     python -m guitartab separate   --url <YouTube URL> | --input <audio>
     python -m guitartab tab        <notes.json> [--out-dir DIR]
+    python -m guitartab midi       <notes.json> [--out FILE]
     python -m guitartab eval       [--eval-data eval_data] [--engine basicpitch]
 """
 
@@ -16,14 +17,17 @@ from guitartab.eval.benchmark import discover_items, format_table, run_benchmark
 from guitartab.eval.metrics import DEFAULT_ONSET_TOLERANCE_SEC
 from guitartab.pipeline import (
     DEFAULT_WORK_ROOT,
+    MIDI_FILENAME,
     TAB_FILENAME,
     TAB_TEXT_FILENAME,
     run_transcribe_pipeline,
     stage_download,
+    stage_midi,
     stage_separate,
     stage_tab,
 )
 from guitartab.tab.render_ascii import DEFAULT_LINE_WIDTH, DEFAULT_TIME_STEP_SEC
+from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM
 from guitartab.transcribe.base import TranscriberEngine
 from guitartab.transcribe.basicpitch import BasicPitchEngine
 
@@ -129,6 +133,21 @@ def cmd_tab(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_midi(args: argparse.Namespace) -> int:
+    notes_path = args.notes
+    if not notes_path.exists():
+        raise SystemExit(f"notes.json not found: {notes_path}")
+    midi_path = args.out if args.out is not None else notes_path.parent / MIDI_FILENAME
+    if "eval_data" in midi_path.resolve().parts:
+        raise SystemExit(
+            "output path is inside eval_data/ (frozen GT area); "
+            "use --out to write elsewhere"
+        )
+    stage_midi(notes_path, midi_path, tempo_bpm=args.tempo, force=args.force)
+    print(midi_path)
+    return 0
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     items = discover_items(args.eval_data)
     if not items:
@@ -199,6 +218,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_tab.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     p_tab.set_defaults(func=cmd_tab)
+
+    p_mid = sub.add_parser("midi", help="notes.json → MIDI (output.mid)")
+    p_mid.add_argument("notes", type=Path, help="入力 notes.json")
+    p_mid.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=f"出力 MIDI パス (default: notes.json と同じディレクトリの {MIDI_FILENAME})",
+    )
+    p_mid.add_argument(
+        "--tempo",
+        type=float,
+        default=DEFAULT_TEMPO_BPM,
+        metavar="BPM",
+        help="固定テンポ (default: %(default)s BPM。量子化は行わない)",
+    )
+    p_mid.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
+    p_mid.set_defaults(func=cmd_midi)
 
     p_ev = sub.add_parser("eval", help="eval_data/ のベンチセットを一括評価")
     # デフォルトは dev セットのみ。holdout（1回限りの最終判定用）を日常のチューニングで

@@ -7,6 +7,7 @@
     work/{id}/notes.json          # transcribe
     work/{id}/tab.json            # tab（運指割当）
     work/{id}/tab.txt             # tab（ASCII レンダリング）
+    work/{id}/output.mid          # midi（耳で検証する用の MIDI レンダリング）
 
 既存ファイルがあればステージをスキップし、force=True で再実行する。
 """
@@ -24,6 +25,7 @@ from guitartab.tab.render_ascii import (
     DEFAULT_TIME_STEP_SEC,
     render_ascii,
 )
+from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM, save_midi
 from guitartab.transcribe.base import NoteEvent, TranscriberEngine, load_notes, save_notes
 
 DEFAULT_WORK_ROOT = Path("work")
@@ -31,6 +33,7 @@ NOTES_FILENAME = "notes.json"
 STEMS_DIRNAME = "stems"
 TAB_FILENAME = "tab.json"
 TAB_TEXT_FILENAME = "tab.txt"
+MIDI_FILENAME = "output.mid"
 
 
 def stage_download(url: str, work_root: Path, *, force: bool = False) -> Path:
@@ -84,6 +87,23 @@ def stage_tab(
     return tab
 
 
+def stage_midi(
+    notes_path: Path,
+    midi_path: Path,
+    *,
+    tempo_bpm: float = DEFAULT_TEMPO_BPM,
+    force: bool = False,
+) -> Path:
+    """notes.json から MIDI (output.mid) を生成する（キャッシュあり）。"""
+    if midi_path.exists() and not force:
+        print(f"cached: {midi_path}", file=sys.stderr)
+        return midi_path
+    notes = load_notes(notes_path)
+    save_midi(notes, midi_path, tempo_bpm=tempo_bpm)
+    print(f"wrote {midi_path} ({len(notes)} notes)", file=sys.stderr)
+    return midi_path
+
+
 def run_transcribe_pipeline(
     url: str,
     engine: TranscriberEngine,
@@ -92,9 +112,10 @@ def run_transcribe_pipeline(
     separate: bool = True,
     force: bool = False,
 ) -> Path:
-    """download → separate → transcribe → tab を実行し notes.json のパスを返す。
+    """download → separate → transcribe → tab → midi を実行し notes.json のパスを返す。
 
-    tab ステージの成果物は work/{id}/tab.json と work/{id}/tab.txt に残る。
+    tab ステージの成果物は work/{id}/tab.json と work/{id}/tab.txt、
+    midi ステージの成果物は work/{id}/output.mid に残る。
     """
     source = stage_download(url, work_root, force=force)
     work_dir = source.parent
@@ -107,4 +128,5 @@ def run_transcribe_pipeline(
         work_dir / TAB_TEXT_FILENAME,
         force=force,
     )
+    stage_midi(notes_path, work_dir / MIDI_FILENAME, force=force)
     return notes_path
