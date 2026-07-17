@@ -1,7 +1,8 @@
-"""guitartab CLI — transcribe / separate / eval サブコマンド。
+"""guitartab CLI — transcribe / separate / tab / eval サブコマンド。
 
     python -m guitartab transcribe --url <YouTube URL>
     python -m guitartab separate   --url <YouTube URL> | --input <audio>
+    python -m guitartab tab        <notes.json> [--out-dir DIR]
     python -m guitartab eval       [--eval-data eval_data] [--engine basicpitch]
 """
 
@@ -15,10 +16,14 @@ from guitartab.eval.benchmark import discover_items, format_table, run_benchmark
 from guitartab.eval.metrics import DEFAULT_ONSET_TOLERANCE_SEC
 from guitartab.pipeline import (
     DEFAULT_WORK_ROOT,
+    TAB_FILENAME,
+    TAB_TEXT_FILENAME,
     run_transcribe_pipeline,
     stage_download,
     stage_separate,
+    stage_tab,
 )
+from guitartab.tab.render_ascii import DEFAULT_LINE_WIDTH, DEFAULT_TIME_STEP_SEC
 from guitartab.transcribe.base import TranscriberEngine
 from guitartab.transcribe.basicpitch import BasicPitchEngine
 
@@ -99,6 +104,31 @@ def cmd_separate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_tab(args: argparse.Namespace) -> int:
+    notes_path = args.notes
+    if not notes_path.exists():
+        raise SystemExit(f"notes.json not found: {notes_path}")
+    out_dir = args.out_dir if args.out_dir is not None else notes_path.parent
+    if "eval_data" in out_dir.resolve().parts:
+        raise SystemExit(
+            "output directory is inside eval_data/ (frozen GT area); "
+            "use --out-dir to write elsewhere"
+        )
+    tab_path = out_dir / TAB_FILENAME
+    tab_txt_path = out_dir / TAB_TEXT_FILENAME
+    stage_tab(
+        notes_path,
+        tab_path,
+        tab_txt_path,
+        time_step_sec=args.time_step,
+        line_width=args.width,
+        force=args.force,
+    )
+    print(tab_path)
+    print(tab_txt_path)
+    return 0
+
+
 def cmd_eval(args: argparse.Namespace) -> int:
     items = discover_items(args.eval_data)
     if not items:
@@ -148,6 +178,27 @@ def main(argv: list[str] | None = None) -> int:
     p_sep.add_argument("--work", type=Path, default=DEFAULT_WORK_ROOT)
     p_sep.add_argument("--force", action="store_true")
     p_sep.set_defaults(func=cmd_separate)
+
+    p_tab = sub.add_parser("tab", help="notes.json → 運指割当(tab.json) + ASCII tab(tab.txt)")
+    p_tab.add_argument("notes", type=Path, help="入力 notes.json")
+    p_tab.add_argument(
+        "--out-dir",
+        type=Path,
+        default=None,
+        help="出力先ディレクトリ (default: notes.json と同じディレクトリ)",
+    )
+    p_tab.add_argument(
+        "--time-step",
+        type=float,
+        default=DEFAULT_TIME_STEP_SEC,
+        metavar="SEC",
+        help="ASCII tab の 1 カラムあたりの秒数",
+    )
+    p_tab.add_argument(
+        "--width", type=int, default=DEFAULT_LINE_WIDTH, help="ASCII tab の折り返し桁数"
+    )
+    p_tab.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
+    p_tab.set_defaults(func=cmd_tab)
 
     p_ev = sub.add_parser("eval", help="eval_data/ のベンチセットを一括評価")
     p_ev.add_argument("--eval-data", type=Path, default=Path("eval_data"))

@@ -1,2 +1,4 @@
-# M2 で実装予定: fingering.py（DP 運指割当）/ render_ascii.py / render_midi.py
-# docs/DESIGN.md のマイルストーン参照。M0-M1 では空のプレースホルダ。
+from guitartab.tab.fingering import TabNote, assign_fingering, load_tab, save_tab
+from guitartab.tab.render_ascii import render_ascii
+
+__all__ = ["TabNote", "assign_fingering", "load_tab", "save_tab", "render_ascii"]
