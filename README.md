@@ -1,187 +1,84 @@
-# guitartab-transcriber
+# guitartab (v2)
 
-音声ファイル（wav/mp3 など）や YouTube URL からギター TAB 譜を生成する Python ライブラリです。
-音声認識には [Basic Pitch](https://github.com/spotify/basic-pitch) を使用しています。
+YouTube URL からギターパートの TAB 譜を生成する Python CLI。
+設計は `docs/DESIGN.md`、v1 の失敗分析と選定根拠は `docs/RESEARCH_2026-07-17.md` を参照。
 
-生成した TAB は
-
-- コンソールでの確認用 **ASCII TAB**
-- プログラムから扱うための **JSON**
-- 簡易な可視化用の **画像（Matplotlib）**
-- LilyPond を用いた **高品質な譜面画像（SVG/PNG）や PDF**（Web フロントエンドに `<img>` / `<object>` などで埋め込み可能）
-
-として利用できます。（パターン A）
-
-本ライブラリの出力責務は **LilyPond 記法（.ly）まで** で、PDF / SVG / PNG などの最終成果物は LilyPond 本体（外部ツール）が生成します。
-
----
-
-## インストール
-
-```bash
-pip install -e .
+```
+python -m guitartab transcribe --url <YouTube URL>
 ```
 
----
+パイプライン: download (yt-dlp) → separate (Demucs htdemucs_6s) → transcribe（エンジン差し替え可能）。
+各ステージは `work/{id}/` に中間成果物（source.wav / stems/guitar.wav / notes.json）を残し、
+既存ファイルがあればスキップします（`--force` で再実行）。
 
-## 必要な依存ライブラリ
+旧実装 v1 は `guitartab_transcriber/` + `main.py` に参照用として残っています（メンテ対象外・インストール対象外）。
 
-- basic-pitch
-- librosa
-- soundfile
-- yt-dlp
-- matplotlib
+## セットアップ
 
-### 外部ツール（任意）
+Python 3.11 / [uv](https://docs.astral.sh/uv/) 前提。
 
-- LilyPond
-  - 高品質な譜面（標準譜＋ TAB）を SVG / PNG / PDF として出力する場合に使用します。
-  - `tab` オブジェクトから LilyPond 記法（`.ly`）を生成し、`lilypond` コマンドでビルドする想定です。
+```bash
+uv sync          # .venv 作成 + 本体依存 + dev（pytest）インストール
+```
 
----
+### 外部ツール
+
+- **ffmpeg**（必須）: `brew install ffmpeg` — yt-dlp の WAV 変換に使用
+- **demucs**（separate ステージで必要）: 本体依存には含めていません。使うときに
+  ```bash
+  uv pip install demucs
+  ```
+
+### basic-pitch の運用（重要）
+
+basic-pitch は Apple Silicon では **Python 3.10 限定**のため、本体 venv（3.11）には
+インストールしません（`uv sync` では入りません）。専用の 3.10 venv を作り、
+guitartab はそこの python をサブプロセスとして呼び出します
+（`src/guitartab/transcribe/basicpitch.py` + `_basicpitch_runner.py`）:
+
+```bash
+uv venv --python 3.10 .venv-basicpitch
+uv pip install --python .venv-basicpitch/bin/python basic-pitch
+```
+
+venv の場所はデフォルトでプロジェクト直下の `.venv-basicpitch/bin/python` を探します。
+別の場所に置いた場合は次のどちらかで指定します:
+
+```bash
+export GUITARTAB_BASICPITCH_PYTHON=/path/to/venv/bin/python
+# または
+python -m guitartab transcribe --url <URL> --basicpitch-python /path/to/venv/bin/python
+```
+
+（Linux 等 3.11 で basic-pitch が動く環境なら extras `uv pip install -e '.[basicpitch]'` で
+本体 venv に同居させ、`--basicpitch-python .venv/bin/python` を指定する運用も可能です）
 
 ## 使い方
 
-### 1. 実行用スクリプトの作成
+```bash
+# YouTube → notes.json（work/{video_id}/notes.json）
+python -m guitartab transcribe --url <YouTube URL>
 
-プロジェクトルートに `main.py` などの名前でファイルを作成します。
+# ギターステム抽出のみ（work/{id}/stems/guitar.wav）
+python -m guitartab separate --url <YouTube URL>
+python -m guitartab separate --input path/to/audio.wav
 
-```python
-from guitartab_transcriber import Transcriber
-import shutil
-
-# インスタンス生成
-t = Transcriber()
-
-# --- パターンA: YouTubeから生成 ---
-url = "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
-print(f"Transcribing from YouTube: {url}")
-
-tab = t.transcribe_from_youtube(url)
-
-# 結果をコンソールに表示
-print("\n=== TAB ===")
-print(tab.to_text())
-
-# 画像として保存
-tab.to_matplotlib("result.png")
-print("Saved visualization to result.png")
-
-# LilyPond 記法（.ly）を書き出し（ライブラリの責務はここまで）
-ly_file = tab.to_lilypond("result.ly", title="Sample TAB")
-print(f"Exported LilyPond source to {ly_file}")
-
-# 必要に応じて LilyPond CLI で SVG などに変換（外部ツールの責務）
-lilypond_path = shutil.which("lilypond")
-if lilypond_path:
-    svg_file = tab.to_lilypond(
-        "result.ly", title="Sample TAB", compile_output="score.svg", lilypond_executable=lilypond_path
-    )
-    print(f"Generated engraved SVG via LilyPond: {svg_file}")
-else:
-    print("LilyPond is not installed; skipped SVG generation. Install LilyPond to produce score.svg.")
-
-# --- パターンB: ローカルの音声ファイルから生成 ---
-# tab = t.transcribe("path/to/your/audio.wav")
-# print(tab.to_text())
+# ベンチセット一括評価（エンジン比較表を出力）
+python -m guitartab eval --eval-data eval_data --engine basicpitch
 ```
 
-### 2. 実行
+## 評価データ
 
-作成したスクリプトを実行します。
+- `eval_data/gt/` は**凍結 ground truth**（人間製）。変更・追加・再生成は禁止
+  （v1 はここを自動再生成して評価を無効化した。`docs/DESIGN.md` 開発ルール参照）。
+- ベンチアイテムの配置規約: `eval_data/items/<id>/` に音声（`audio.wav` 等）と
+  GT（`gt.jams` / `gt.json` / `ground_truth.json`）のペアを置く。
+  GuitarSet の JAMS（`note_midi` namespace）と v1 形式（time/string/fret/duration）に対応。
+- 精度指標は `mir_eval` の note-level Precision/Recall/F1
+  （onset tolerance 50ms、pitch は同一半音、offset 不問）。
+
+## テスト
 
 ```bash
-python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID"
-# 結果の画像を別ファイル名で保存したい場合
-python main.py --url "https://www.youtube.com/watch?v=YOUR_VIDEO_ID" --output my_tab.png
+uv run pytest
 ```
-
-LilyPond のビルドを行う場合は、`lilypond` コマンドがパスに通っている必要があります。
-
-### LilyPond 連携の考え方
-
-1. **ライブラリの責務**: `tab.to_lilypond()` で TAB 情報から LilyPond 記法（`.ly`）を生成する。
-2. **外部ツールの責務**: 生成した `.ly` を LilyPond コマンド（例: `lilypond --svg -o score result.ly`）でビルドし、PDF / SVG / PNG を得る。
-
-`.ly` は HTML のような「楽譜の設計図」に相当し、Web フロントエンドに埋め込む際は LilyPond が生成した `score.svg` / `score.png` / `score.pdf` を利用する想定です。
-
-- 音声は yt-dlp で一括ダウンロード（可能な限り高速）してから解析します。再生速度でストリーミングしているわけではありません。
-  ダウンロード中の進捗は標準エラー出力に簡易表示されます。
-
----
-
-## 機能
-
-### 入力形式
-
-- **ローカル音声ファイル**: wav/mp3 などの音声ファイルから直接 TAB 譜を生成
-- **YouTube URL**: YouTube の動画 URL を指定して、音声を自動ダウンロード・変換して TAB 譜を生成
-
-  - yt-dlp による高速ダウンロード（ストリーミング再生ではなく一括ダウンロード）
-  - ダウンロード進捗の簡易表示（標準エラー出力）
-  - ffmpeg による WAV 変換
-
-### AI 音声認識
-
-- **Basic Pitch (Spotify 製)** を使用した高精度な音声 →MIDI 変換
-
-  - ICASSP 2022 モデルを使用
-  - ピッチ検出範囲: MIDI 40-88（ギター音域に最適化）
-  - サンプルレート: 44100Hz
-
-### TAB 譜生成ロジック
-
-- **運指決定アルゴリズム**:
-
-  - E 標準チューニング対応（6 弦 E2=40, 5 弦 A2=45, 4 弦 D3=50, 3 弦 G3=55, 2 弦 B3=59, 1 弦 E4=64）
-  - 各音に対して弾ける弦を探索し、できるだけ太い弦（低音弦）を優先
-  - フレット範囲: 0-20 フレット
-  - ギター音域外の音は自動的にフィルタリング
-
-### 出力形式
-
-1. **テキスト形式（ASCII タブ）**
-
-   - 6 本の弦を視覚的に表現
-   - 時間順にフレット番号を配置
-   - コンソール出力に最適
-
-2. **JSON 形式**
-
-   - 各イベントの詳細情報（弦番号、フレット、開始時刻、終了時刻）
-   - プログラムでの後処理に最適
-   - BPM 情報（オプション）
-
-3. **画像形式（Matplotlib）**
-
-   - 6 本の弦を横線で表現
-   - 時間軸に沿ってフレット番号を配置
-   - PNG/JPG などの画像ファイルとして保存可能
-   - 視覚的な確認・共有に最適
-
-4. **高品質な譜面出力（LilyPond 連携 / パターン A）**
-
-   - TAB 情報から LilyPond 記法（`.ly`）を生成
-   - `lilypond` コマンドで SVG / PNG / PDF を生成
-   - 標準譜＋ TAB、拍子記号、レイアウトなどを含む高品質な譜面を出力
-   - 生成された SVG / PNG / PDF を Web フロントエンドにそのまま埋め込んで表示可能
-
----
-
-### 設定オプション
-
-- **TranscriptionConfig**でカスタマイズ可能:
-
-  - `tuning`: チューニング設定（現在は E_standard、Drop_D 対応予定）
-  - `sample_rate`: サンプリングレート（デフォルト: 44100Hz）
-  - `min_pitch` / `max_pitch`: 検出するピッチ範囲（MIDI 番号）
-
----
-
-## 今後の予定
-
-- Drop D などの変則チューニング対応
-- 運指最適化ロジックの改善
-- TAB フォーマットの精度向上
-- LilyPond 出力の改善（ポジション・記号・レイアウト調整など）
-- 生成された SVG / PDF を使った Web フロントエンド向け UI のサンプル追加

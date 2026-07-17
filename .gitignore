@@ -1,3 +1,7 @@
 __pycache__
 *.egg-info
 _archive/
+.venv/
+.venv-basicpitch/
+work/
+.pytest_cache/

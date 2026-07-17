@@ -1,21 +1,34 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
-name = "guitartab-transcriber"
-version = "0.1.0"
-description = "Guitar tab transcription library from audio or YouTube"
-authors = [
-  { name = "Your Name" }
-]
+name = "guitartab"
+version = "0.2.0"
+description = "YouTube URL -> guitar TAB transcription pipeline (v2, evaluation-first)"
+requires-python = ">=3.11"
 dependencies = [
-  "basic-pitch",
+  "yt-dlp",
   "librosa",
   "soundfile",
-  "yt-dlp",
-  "matplotlib",
+  "mir_eval",
+  "numpy",
 ]
 
-[project.urls]
-Homepage = "https://example.com"
+[project.optional-dependencies]
+# basic-pitch is Python 3.10-only on Apple Silicon.
+# Do NOT install into the main (3.11) venv; use a dedicated 3.10 venv and the
+# subprocess-based BasicPitchEngine. See README "basic-pitch の運用" for setup.
+basicpitch = ["basic-pitch"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[project.scripts]
+guitartab = "guitartab.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/guitartab"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
