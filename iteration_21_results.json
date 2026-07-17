@@ -1,7 +1,0 @@
-{
-  "iteration": 21,
-  "accuracy": 0.11764705882352941,
-  "matches": 2,
-  "total_ground_truth": 17,
-  "total_generated": 573
-}
