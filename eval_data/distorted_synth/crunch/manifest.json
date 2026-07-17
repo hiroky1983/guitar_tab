@@ -1,0 +1,163 @@
+{
+  "source": "eval_data/guitarset (GuitarSet Zenodo record 3371780, audio_mono-mic), synthetically distorted \u2014 NOT a real amplifier recording",
+  "generator": "pedalboard 0.9.24 (Spotify), see eval_data/distorted_synth/README.md",
+  "preset": "crunch",
+  "chain": [
+    {
+      "plugin": "HighpassFilter",
+      "params": {
+        "cutoff_frequency_hz": 60.0
+      }
+    },
+    {
+      "plugin": "Gain",
+      "params": {
+        "gain_db": 14.0
+      }
+    },
+    {
+      "plugin": "Distortion",
+      "params": {
+        "drive_db": 18.0
+      }
+    },
+    {
+      "plugin": "PeakFilter",
+      "params": {
+        "cutoff_frequency_hz": 2200.0,
+        "gain_db": 3.0,
+        "q": 0.9
+      }
+    },
+    {
+      "plugin": "LowpassFilter",
+      "params": {
+        "cutoff_frequency_hz": 5500.0
+      }
+    }
+  ],
+  "post_normalization_peak_dbfs": -1.0,
+  "annotations": "GuitarSet JAMS copied byte-identical (distortion is time/pitch preserving)",
+  "tracks": [
+    {
+      "track_id": "00_BN3-119-G_solo",
+      "player": "00",
+      "style": "Bossa Nova",
+      "tempo": 119,
+      "key": "G",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/00_BN3-119-G_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/00_BN3-119-G_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/00_BN3-119-G_solo_mic.wav",
+      "post_norm_gain_db": -4.05
+    },
+    {
+      "track_id": "05_BN2-166-Ab_solo",
+      "player": "05",
+      "style": "Bossa Nova",
+      "tempo": 166,
+      "key": "Ab",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/05_BN2-166-Ab_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/05_BN2-166-Ab_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/05_BN2-166-Ab_solo_mic.wav",
+      "post_norm_gain_db": -4.19
+    },
+    {
+      "track_id": "01_Funk1-97-C_solo",
+      "player": "01",
+      "style": "Funk",
+      "tempo": 97,
+      "key": "C",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/01_Funk1-97-C_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/01_Funk1-97-C_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/01_Funk1-97-C_solo_mic.wav",
+      "post_norm_gain_db": -3.45
+    },
+    {
+      "track_id": "04_Funk2-119-G_solo",
+      "player": "04",
+      "style": "Funk",
+      "tempo": 119,
+      "key": "G",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/04_Funk2-119-G_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/04_Funk2-119-G_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/04_Funk2-119-G_solo_mic.wav",
+      "post_norm_gain_db": -4.29
+    },
+    {
+      "track_id": "02_Jazz2-110-Bb_solo",
+      "player": "02",
+      "style": "Jazz",
+      "tempo": 110,
+      "key": "Bb",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/02_Jazz2-110-Bb_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/02_Jazz2-110-Bb_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/02_Jazz2-110-Bb_solo_mic.wav",
+      "post_norm_gain_db": -4.23
+    },
+    {
+      "track_id": "03_Jazz1-200-B_solo",
+      "player": "03",
+      "style": "Jazz",
+      "tempo": 200,
+      "key": "B",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/03_Jazz1-200-B_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/03_Jazz1-200-B_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/03_Jazz1-200-B_solo_mic.wav",
+      "post_norm_gain_db": -4.38
+    },
+    {
+      "track_id": "00_Rock2-85-F_solo",
+      "player": "00",
+      "style": "Rock",
+      "tempo": 85,
+      "key": "F",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/00_Rock2-85-F_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/00_Rock2-85-F_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/00_Rock2-85-F_solo_mic.wav",
+      "post_norm_gain_db": -4.1
+    },
+    {
+      "track_id": "04_Rock3-148-C_solo",
+      "player": "04",
+      "style": "Rock",
+      "tempo": 148,
+      "key": "C",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/04_Rock3-148-C_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/04_Rock3-148-C_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/04_Rock3-148-C_solo_mic.wav",
+      "post_norm_gain_db": -4.24
+    },
+    {
+      "track_id": "02_SS1-68-E_solo",
+      "player": "02",
+      "style": "Singer-Songwriter",
+      "tempo": 68,
+      "key": "E",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/02_SS1-68-E_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/02_SS1-68-E_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/02_SS1-68-E_solo_mic.wav",
+      "post_norm_gain_db": -4.37
+    },
+    {
+      "track_id": "05_SS2-107-Ab_solo",
+      "player": "05",
+      "style": "Singer-Songwriter",
+      "tempo": 107,
+      "key": "Ab",
+      "mode": "solo",
+      "audio": "eval_data/distorted_synth/crunch/audio/05_SS2-107-Ab_solo_crunch.wav",
+      "annotation": "eval_data/distorted_synth/crunch/annotations/05_SS2-107-Ab_solo.jams",
+      "source_audio": "eval_data/guitarset/audio/05_SS2-107-Ab_solo_mic.wav",
+      "post_norm_gain_db": -4.05
+    }
+  ]
+}
