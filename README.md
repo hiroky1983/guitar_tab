@@ -26,8 +26,10 @@ uv sync          # .venv 作成 + 本体依存 + dev（pytest）インストー�
 - **ffmpeg**（必須）: `brew install ffmpeg` — yt-dlp の WAV 変換に使用
 - **demucs**（separate ステージで必要）: 本体依存には含めていません。使うときに
   ```bash
-  uv pip install demucs
+  uv pip install demucs torchaudio torchcodec
   ```
+  torchaudio 2.11+ は `torchaudio.load()` に torchcodec（+ ffmpeg）が必須
+  （2026-07-17 実測: demucs 4.1.0 / torch 2.13.0 / torchcodec 0.15.0 / ffmpeg 8.0.1 で動作確認）。
 
 ### basic-pitch の運用（重要）
 
