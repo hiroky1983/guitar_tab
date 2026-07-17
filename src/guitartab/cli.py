@@ -201,7 +201,9 @@ def main(argv: list[str] | None = None) -> int:
     p_tab.set_defaults(func=cmd_tab)
 
     p_ev = sub.add_parser("eval", help="eval_data/ のベンチセットを一括評価")
-    p_ev.add_argument("--eval-data", type=Path, default=Path("eval_data"))
+    # デフォルトは dev セットのみ。holdout（1回限りの最終判定用）を日常のチューニングで
+    # 汚染しないため、eval_data/ 全体をデフォルトにしない。
+    p_ev.add_argument("--eval-data", type=Path, default=Path("eval_data/guitarset"))
     p_ev.add_argument(
         "--engine",
         action="append",
