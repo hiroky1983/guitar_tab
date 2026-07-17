@@ -83,7 +83,8 @@ class Transcriber:
                     n.pitch = shifted
                     print(f"Shifted note {original} -> {n.pitch} (5th -> Root, vel={n.velocity:.2f})")
             # オクターブ倍音の補正 - 境界チェックでmin_pitch未満への移動を防止
-            elif 52 <= n.pitch <= 65:
+            # G3 (pitch 55, 3弦開放) は実音なので除外
+            elif 52 <= n.pitch <= 65 and n.pitch != 55:
                 shifted = n.pitch - 12
                 if shifted >= self.config.min_pitch:
                     n.pitch = shifted
@@ -392,11 +393,11 @@ class Transcriber:
         out_dir = audio_path.parent / "separated"
         
         # demucsコマンドの実行
-        # -n htdemucs: 高性能モデル
-        # --two-stems オプションを削除し、全パート（drums, bass, other, vocals）を分離する
+        # -n htdemucs_6s: 6ステムモデル (drums, bass, vocals, guitar, piano, other)
+        # ギターを明示的に分離して、検出精度を向上
         cmd = [
             "demucs",
-            "-n", "htdemucs",
+            "-n", "htdemucs_6s",
             "-o", str(out_dir),
             str(audio_path)
         ]
@@ -414,13 +415,13 @@ class Transcriber:
             return {"guitar": audio_path, "drums": audio_path}
             
         # 生成されたファイルのパス
-        # separated/htdemucs/{filename}/{stem}.wav
+        # separated/htdemucs_6s/{filename}/{stem}.wav
         track_name = audio_path.stem
-        base_dir = out_dir / "htdemucs" / track_name
-        
-        guitar_path = base_dir / "other.wav"
+        base_dir = out_dir / "htdemucs_6s" / track_name
+
+        guitar_path = base_dir / "guitar.wav"  # 6ステムモデルではguitar.wavが生成される
         drums_path = base_dir / "drums.wav"
-        
+
         if guitar_path.exists() and drums_path.exists():
             return {"guitar": guitar_path, "drums": drums_path}
         else:
@@ -454,8 +455,8 @@ class Transcriber:
             _, _, note_events = predict(
                 str(audio_path),
                 model_or_model_path=ICASSP_2022_MODEL_PATH,
-                onset_threshold=0.50,      # 速いパッセージ検出のためバランス調整 (0.70→0.50)
-                frame_threshold=0.40,      # フレーム検出も調整 (0.60→0.40)
+                onset_threshold=0.50,      # 速いパッセージ検出のためバランス調整
+                frame_threshold=0.40,      # フレーム検出も調整
                 minimum_note_length=50.0,  # 短い音符も検出 (150ms→50ms, 256ms間隔のパッセージ対応)
                 minimum_frequency=110.0,   # A2(110Hz=5弦開放)以上、6弦はハードブロックで除外
                 maximum_frequency=880.0,   # A5まで、さらに倍音を制限
