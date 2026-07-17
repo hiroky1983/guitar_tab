@@ -27,7 +27,15 @@ ENGINE_NAMES = ["basicpitch", "muscriptor"]
 
 def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
     if name == "basicpitch":
-        return BasicPitchEngine(venv_python=args.basicpitch_python)
+        return BasicPitchEngine(
+            venv_python=args.basicpitch_python,
+            onset_threshold=args.bp_onset_threshold,
+            frame_threshold=args.bp_frame_threshold,
+            minimum_note_length=args.bp_minimum_note_length,
+            minimum_frequency=args.bp_minimum_frequency,
+            maximum_frequency=args.bp_maximum_frequency,
+            melodia_trick=False if args.bp_no_melodia_trick else None,
+        )
     if name == "muscriptor":
         raise SystemExit(
             "muscriptor engine is not implemented yet (M0: pending Apple Silicon "
@@ -44,6 +52,21 @@ def _add_common_engine_args(p: argparse.ArgumentParser) -> None:
         metavar="PYTHON",
         help="basic-pitch 専用 venv の python パス "
         "(default: $GUITARTAB_BASICPITCH_PYTHON or .venv-basicpitch/bin/python)",
+    )
+    # basic_pitch.inference.predict() のネイティブ推論パラメータ。
+    # 未指定（None）は predict() のデフォルト = 従来動作。
+    bp = p.add_argument_group("basic-pitch predict() params")
+    bp.add_argument("--bp-onset-threshold", type=float, default=None, metavar="P")
+    bp.add_argument("--bp-frame-threshold", type=float, default=None, metavar="P")
+    bp.add_argument(
+        "--bp-minimum-note-length", type=float, default=None, metavar="MS"
+    )
+    bp.add_argument("--bp-minimum-frequency", type=float, default=None, metavar="HZ")
+    bp.add_argument("--bp-maximum-frequency", type=float, default=None, metavar="HZ")
+    bp.add_argument(
+        "--bp-no-melodia-trick",
+        action="store_true",
+        help="melodia trick を無効化する（default: 有効）",
     )
 
 

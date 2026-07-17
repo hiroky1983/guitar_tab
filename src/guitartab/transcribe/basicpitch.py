@@ -13,6 +13,7 @@ notes.json を受け取る。venv パスの指定方法（優先順）:
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -36,13 +37,37 @@ _SETUP_HINT = (
 
 
 class BasicPitchEngine:
-    """Spotify basic-pitch によるベースライン転写エンジン（別 venv サブプロセス実行）。"""
+    """Spotify basic-pitch によるベースライン転写エンジン（別 venv サブプロセス実行）。
+
+    onset_threshold 以下のキーワード引数は basic_pitch.inference.predict() の
+    ネイティブ推論パラメータで、None のものは渡さない（= predict() のデフォルト。
+    従来動作と同一）。ランナー側 PREDICT_PARAMS と対応。
+    """
 
     name = "basicpitch"
 
-    def __init__(self, venv_python: Path | str | None = None):
+    def __init__(
+        self,
+        venv_python: Path | str | None = None,
+        *,
+        onset_threshold: float | None = None,
+        frame_threshold: float | None = None,
+        minimum_note_length: float | None = None,
+        minimum_frequency: float | None = None,
+        maximum_frequency: float | None = None,
+        melodia_trick: bool | None = None,
+    ):
         resolved = venv_python or os.environ.get(ENV_VAR) or DEFAULT_VENV_PYTHON
         self.venv_python = Path(resolved)
+        params = {
+            "onset_threshold": onset_threshold,
+            "frame_threshold": frame_threshold,
+            "minimum_note_length": minimum_note_length,
+            "minimum_frequency": minimum_frequency,
+            "maximum_frequency": maximum_frequency,
+            "melodia_trick": melodia_trick,
+        }
+        self.predict_params: dict = {k: v for k, v in params.items() if v is not None}
 
     def transcribe(self, audio_path: Path) -> list[NoteEvent]:
         audio_path = Path(audio_path)
@@ -59,6 +84,8 @@ class BasicPitchEngine:
                 str(audio_path),
                 str(out_json),
             ]
+            if self.predict_params:
+                cmd.append(json.dumps(self.predict_params))
             proc = subprocess.run(cmd, capture_output=True, text=True)
             if proc.stderr:
                 print(proc.stderr, file=sys.stderr, end="")
