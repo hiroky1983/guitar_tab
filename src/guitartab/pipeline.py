@@ -210,10 +210,17 @@ def run_transcribe_pipeline(
     "stem" = 転写に使った音声そのもの（従来動作）、
     "mix" = 分離前の原曲ミックス work/{id}/source.wav
     （転写ノートは従来どおりステム由来のまま = リズムだけミックスから取る）。
-    rhythm_estimator は TempoEstimator の差し替え（None = librosa 候補 A）。
+    rhythm_estimator は TempoEstimator の差し替え（None = librosa 候補 A。
+    このとき rhythm_source="mix" なら音声トラッカー信頼モードを自動で有効化
+    する — ミックスでは候補選択層がテンポレベルを上書きして族外へ落とす
+    実測があるため。明示的に estimator を渡した場合はその設定を尊重する）。
     """
     if rhythm_source not in ("stem", "mix"):
         raise ValueError(f"rhythm_source must be 'stem' or 'mix': {rhythm_source!r}")
+    if rhythm_estimator is None:
+        rhythm_estimator = LibrosaConstantTempoEstimator(
+            trust_tracker=rhythm_source == "mix"
+        )
     source = stage_download(url, work_root, force=force)
     work_dir = source.parent
     audio = stage_separate(source, force=force) if separate else source

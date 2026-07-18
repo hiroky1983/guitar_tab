@@ -217,6 +217,112 @@ def test_estimator_empty_input_returns_default():
 
 
 # ---------------------------------------------------------------------------
+# 音声トラッカー信頼モード（trust_tracker、M4b）
+# ---------------------------------------------------------------------------
+
+
+def _click_wav(tmp_path, bpm=120.0, dur_sec=12.0, sr=22050):
+    """一定テンポのクリック音声を合成して wav パスを返す。"""
+    import numpy as np
+    import soundfile as sf
+
+    y = np.zeros(int(dur_sec * sr), dtype=np.float32)
+    n = 256
+    click = (
+        np.hanning(n) * np.sin(2 * np.pi * 1000.0 * np.arange(n) / sr)
+    ).astype(np.float32)
+    t = 0.0
+    while t < dur_sec - n / sr:
+        i = int(t * sr)
+        y[i : i + n] += click
+        t += 60.0 / bpm
+    path = tmp_path / "click.wav"
+    sf.write(path, y, sr)
+    return path
+
+
+def test_trust_tracker_default_off_and_recorded_in_params():
+    est = LibrosaConstantTempoEstimator()
+    assert est.trust_tracker is False
+    assert est._params(audio_used=False)["trust_tracker"] is False
+    assert (
+        LibrosaConstantTempoEstimator(trust_tracker=True)._params(audio_used=True)[
+            "trust_tracker"
+        ]
+        is True
+    )
+
+
+def test_trust_tracker_notes_only_path_identical(tmp_path):
+    """音声なしでは信頼モードは従来のノートのみフォールバックと同一結果。"""
+    bpm, beat = 100.0, 0.6
+    onsets = [k * beat / 4 for k in range(64)]
+    base = LibrosaConstantTempoEstimator().estimate(onsets)
+    trusted = LibrosaConstantTempoEstimator(trust_tracker=True).estimate(onsets)
+    assert trusted.bpm == base.bpm
+    assert trusted.grid_origin_sec == base.grid_origin_sec
+
+
+def test_trust_tracker_keeps_tracker_tempo_level(tmp_path):
+    """信頼モードは生 beat_track のテンポレベルを上書きしない。"""
+    import librosa
+    import numpy as np
+
+    audio = _click_wav(tmp_path, bpm=120.0)
+    # 8 分主体のノート列（半テンポ格子も完全適合し、選択層がレベルを誤り得る形）
+    onsets = [k * 0.25 for k in range(48)]
+    y, _ = librosa.load(audio, sr=22050, mono=True)
+    env = librosa.onset.onset_strength(y=y, sr=22050, hop_length=512)
+    raw_tempo, _b = librosa.beat.beat_track(
+        onset_envelope=env, sr=22050, hop_length=512, units="time"
+    )
+    raw_tempo = float(np.atleast_1d(raw_tempo)[0])
+
+    est = LibrosaConstantTempoEstimator(trust_tracker=True).estimate(
+        onsets, audio_path=audio
+    )
+    # 生トラッカーのテンポ ±6% 内に収まる（ノート格子による上書きなし）
+    assert abs(np.log2(est.bpm / raw_tempo)) <= np.log2(1.06)
+    assert est.params["trust_tracker"] is True
+
+
+def test_fit_beats_bpm_robust_to_missing_beats():
+    import numpy as np
+
+    from guitartab.rhythm.estimate import _fit_beats_bpm
+
+    period = 0.5  # 120 BPM
+    beats = [0.1 + k * period for k in range(40) if k != 7]  # 1 拍欠落
+    bpm = _fit_beats_bpm(np.asarray(beats))
+    assert bpm == pytest.approx(120.0, rel=1e-6)
+    assert _fit_beats_bpm(np.asarray([1.0])) is None
+
+
+def test_trust_tracker_bypasses_candidate_selection(tmp_path, monkeypatch):
+    """信頼モードはテンポ精密化 _refine を呼ばず（ノートは位相のみ）、
+    従来モードは候補族の走査で複数回呼ぶ（stem 経路の従来コードパス証明）。"""
+    audio = _click_wav(tmp_path, bpm=120.0)
+    onsets = [k * 0.25 for k in range(48)]
+
+    calls = []
+    orig_refine = LibrosaConstantTempoEstimator._refine
+
+    def spy_refine(self, o, bpm0):
+        calls.append(bpm0)
+        return orig_refine(self, o, bpm0)
+
+    monkeypatch.setattr(LibrosaConstantTempoEstimator, "_refine", spy_refine)
+
+    LibrosaConstantTempoEstimator(trust_tracker=True).estimate(
+        onsets, audio_path=audio
+    )
+    assert calls == []  # ノート格子適合でテンポを動かさない
+
+    LibrosaConstantTempoEstimator().estimate(onsets, audio_path=audio)
+    assert len(calls) > 1  # 従来モードは候補族を走査する（stem 経路は不変）
+
+
+# ---------------------------------------------------------------------------
 # metrics
 # ---------------------------------------------------------------------------
 

@@ -44,16 +44,20 @@ ENGINE_NAMES = ["basicpitch", "yourmt3", "muscriptor"]
 RHYTHM_ESTIMATOR_NAMES = ["librosa", "beatthis"]
 
 
-def build_rhythm_estimator(name: str):
-    """--rhythm-estimator の名前から TempoEstimator を構築する。"""
+def build_rhythm_estimator(name: str, *, trust_tracker: bool = False):
+    """--rhythm-estimator の名前から TempoEstimator を構築する。
+
+    trust_tracker は音声トラッカー信頼モード（M4b。ミックス入力でテンポ候補
+    選択層がテンポレベルを上書きするのを禁止する）。
+    """
     if name == "beatthis":
         from guitartab.rhythm.beatthis import BeatThisTempoEstimator
 
-        return BeatThisTempoEstimator()
+        return BeatThisTempoEstimator(trust_tracker=trust_tracker)
     if name == "librosa":
         from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
 
-        return LibrosaConstantTempoEstimator()
+        return LibrosaConstantTempoEstimator(trust_tracker=trust_tracker)
     raise SystemExit(
         f"unknown rhythm estimator: {name} "
         f"(available: {', '.join(RHYTHM_ESTIMATOR_NAMES)})"
@@ -183,7 +187,12 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         separate=not args.no_separate,
         quantize=not args.no_quantize,
         rhythm_source=args.rhythm_source,
-        rhythm_estimator=build_rhythm_estimator(args.rhythm_estimator),
+        # mix 入力では音声トラッカー信頼モードを自動で有効化する（M4b。
+        # ミックスでは生 beat_track が正しいのに候補選択層がテンポレベルを
+        # 上書きして族外へ落とす実測があるため。stem は従来どおり）
+        rhythm_estimator=build_rhythm_estimator(
+            args.rhythm_estimator, trust_tracker=args.rhythm_source == "mix"
+        ),
         force=args.force,
     )
     print(notes_path)
@@ -248,7 +257,9 @@ def cmd_quantize(args: argparse.Namespace) -> int:
         notes_path,
         out_path,
         audio_path=audio_path,
-        estimator=build_rhythm_estimator(args.rhythm_estimator),
+        estimator=build_rhythm_estimator(
+            args.rhythm_estimator, trust_tracker=args.trust_tracker
+        ),
         force=args.force,
     )
     print(out_path)
@@ -430,6 +441,13 @@ def main(argv: list[str] | None = None) -> int:
         default="librosa",
         help="テンポ推定器（librosa = M4a 候補 A / beatthis = M4b 候補 B。"
         "beatthis は専用 venv .venv-beatthis が必要）",
+    )
+    p_q.add_argument(
+        "--trust-tracker",
+        action="store_true",
+        help="音声トラッカー信頼モード（M4b）。生 beat_track のテンポレベルを"
+        "基準にし、ノート格子適合は精密化と位相のみに使う（候補選択層による"
+        "テンポレベルの上書きを禁止）。ミックス音声を --audio に渡すとき向け",
     )
     p_q.add_argument(
         "--out",

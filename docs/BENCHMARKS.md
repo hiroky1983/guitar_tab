@@ -847,3 +847,88 @@ uv run python -m guitartab musicxml work/wr7xTGTG-Mo/tab.json \
   --rhythm <OUT>/rhythm.json --out <OUT>/output.musicxml
 uv run python -m guitartab transcribe --url <URL> --rhythm-source mix --rhythm-estimator beatthis
 ```
+
+---
+
+## 2026-07-18: M4b — ミックス入力の音声トラッカー信頼モード（候補選択層バイパス）
+
+前節の示唆 (a)（ミックス入力時に M4a 候補選択層をバイパスして生 beat_track を
+使う構成）の実装と検証。**1 曲の参考検証であり M4b ゲート判定ではない**
+（ゲートは人手拍ラベル付き実曲 ≥2 曲で行う。holdout 不使用・GT 不変更）。
+
+### 実装
+
+`LibrosaConstantTempoEstimator(trust_tracker=True)`（`rhythm/estimate.py`）:
+テンポ = **生 beat_track 拍列の頑健 LS フィット**（median-IOI で拍インデックスを
+丸めて回帰。トラッカーのテンポから 6% 超ずれたらトラッカーのテンポへ
+フォールバック）、ノート格子適合は**位相 phi16 の決定のみ**（`_fine_fit` 1 回。
+`_refine` = 候補族の走査・選択・polish は一切呼ばない）、拍ラベル k∈{0..3} は
+従来どおりテンポ固定 DP 拍のスナップ。`BeatThisTempoEstimator` も
+`trust_tracker` を受けるが、beatthis 主経路は構造上すでにトラッカー信頼
+（レベル = median IOI、ノートはレベル固定 ±8% のみ）のため、拍が取れなかった
+ときの librosa フォールバックへの伝播のみ。配線: `transcribe --rhythm-source mix`
+で自動有効化（stem は従来どおり無効）/ `quantize --trust-tracker` /
+`run_transcribe_pipeline(rhythm_estimator=None, rhythm_source="mix")` でも自動。
+配線・バイパスのテスト 8 件追加（pytest 計 181 件通過）。
+
+設計上の実測メモ: 当初は「レベル固定 ±8% の格子適合走査 + polish」で
+精密化する案を実測したが、本実曲では格子適合が走査端まで滑って
+**trust モードでも 108.0 に退行**（117.5 × 0.92 = 108.1 が走査端）。
+テンポレベルどころか ±8% でもノート格子にテンポを触らせてはならない、が
+本曲の実測。よって位相のみに限定した。
+
+### stem 経路の回帰ゼロ証明（実測、各 1 回）
+
+trust_tracker はデフォルト False で、stem 経路は従来コードパスをそのまま通る。
+実装後の再実測は M4a/M4b の記録値と完全一致:
+
+| ベンチ | 実装後 | 記録値（M4a/M4b） |
+|---|---|---|
+| GuitarSet dev 10（librosa × stem） | Acc1 5/10 / Acc2 9/10 / beatF 0.548 / CMLt 0.389 / AMLt 0.700 | 同一 |
+| rhythm_synth clean（librosa） | Acc1 6/10 / Acc2 10/10 / GPA 0.403 | 同一 |
+| ギリギリchop librosa × stem（trust なし） | 108.0 | 108.0 |
+| ギリギリchop librosa × mix（trust なし） | 108.0 | 108.0 |
+
+### 実曲検証（B'z「ギリギリchop」86.2 秒、参照 117 BPM・4/4、各 1 回実測）
+
+| 構成 | 推定テンポ | vs 117 | 族判定 |
+|---|---:|---:|---|
+| **librosa × mix × trust** | **118.0** | **+0.9%** | **1 倍レベル正解（117.5±1 に入る）** |
+| beatthis × mix × trust | 242.8 | +107.5% | 2 倍族のまま（前節と同値） |
+
+- librosa × mix × trust の内訳: 生 beat_track テンポ 117.45 / 拍列 163 拍の
+  LS フィット 118.02 → rhythm.json tempo_bpm 118.0。前節の 108.0（選択層）が
+  解消し、生トラッカーの族に入った。
+- beatthis × mix × trust は不変（242.8）: Beat This! は 8 分レベルの拍列
+  （median IOI 0.260s）自体を返しており、trust モードは「トラッカーを信頼する」
+  方向の変更のため 2 倍族はそのまま。レベル折り畳み（前節の示唆 (b)）は未実装。
+
+### mix trust 経路 rhythm.json での MusicXML 再生成（librosa × mix × trust）
+
+| 出力 | 小節数 | テンポ表記 | 拍子 |
+|---|---:|---:|---|
+| librosa × mix × trust | 41 | 118 | 4/4 |
+| （参考）beatthis × mix、前節 | 85 | 242.8 | 4/4 |
+| （参考）固定 120BPM 近似 | 42 | 120 | 4/4 |
+
+41 小節 × 4 拍 / 118 BPM ≒ 83.4 秒 = 転写ノートの実スパンに一致
+（86.2 秒の音声末尾は無音/ノートなし）。公式 TAB の曲想（117 BPM・4/4、
+86.2 秒 ≒ 42〜44 小節）と整合するレベルに入った。
+
+### 残課題（実測に基づく）
+
+- beatthis のテンポレベル折り畳み（拍あたりノート密度等による 2 倍族判定、
+  前節示唆 (b)）は未実装。
+- 本検証は 1 曲参考。M4b 本判定は人手拍ラベル付き実曲 ≥2 曲・Beat F ≥ 0.70 で
+  行うこと（trust モードの beatF はまだ未計測）。
+
+再現コマンド:
+
+```
+uv run python -m guitartab quantize work/wr7xTGTG-Mo/notes.json \
+  --trust-tracker --audio work/wr7xTGTG-Mo/source.wav --out <OUT>/rhythm.json
+uv run python -m guitartab musicxml work/wr7xTGTG-Mo/tab.json \
+  --rhythm <OUT>/rhythm.json --out <OUT>/output.musicxml
+uv run python -m guitartab transcribe --url <URL> --rhythm-source mix  # trust 自動有効化
+uv run python -m guitartab eval --rhythm --eval-data eval_data/guitarset  # stem 回帰確認
+```

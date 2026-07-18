@@ -24,6 +24,17 @@ docs/DESIGN_M4_QUANTIZATION.md §2 の設計を dev 10 トラックでの実測�
 音声なし（onsets のみ）のフォールバックは BPM 幾何走査 + ex のみ
 （設計 §2.1 の IOI 格子投票相当の補助経路。精度は落ちる）。
 
+音声トラッカー信頼モード（trust_tracker=True、M4b）: 実曲ミックス入力では
+生 beat_track がテンポ族を正しく当てるのに、上記候補選択層（ノート格子適合
+スコア支配）がテンポレベルを上書きして族外へ落とす実測がある
+（docs/BENCHMARKS.md「M4b — ミックス経路 実曲検証」: 生 117.5 → 選択層 108.0）。
+このモードではテンポ = 生 beat_track 拍列の頑健 LS フィット（トラッカーの
+テンポから 6% 超ずれたらトラッカーのテンポへフォールバック）とし、
+ノート格子適合は位相の決定のみに使う —— 候補族の生成・選択は行わず、
+ノートがテンポを動かすことを許さない（レベル固定 ±8% の走査でも実曲では
+格子適合が走査端の 108.0 まで滑る実測があった）。pipeline の
+rhythm_source="mix" 時に自動でこのモードになる（stem 経路は従来どおり）。
+
 Beat This!（候補 B）は TempoEstimator Protocol を実装すれば差し替え可能
 （M4a では未統合）。
 """
@@ -158,6 +169,32 @@ def _polish(
     return 60.0 / period, phase
 
 
+def _fit_beats_bpm(beats_sec: np.ndarray) -> float | None:
+    """トラッカー拍列 t = phase + k·period の頑健 LS フィットで BPM を返す。
+
+    拍インデックス k は median IOI で丸めて推定（拍の欠落 = k の飛びに頑健）。
+    拍 2 個未満・非正周期・BPM 範囲外は None（呼び出し側でフォールバック）。
+    音声トラッカー信頼モード用: 拍列全体で回帰するためテンポグラムのビン
+    量子化より高精度で、一定テンポ描画時のドリフトを抑える。
+    """
+    t = np.sort(beats_sec[np.isfinite(beats_sec)])
+    if len(t) < 2:
+        return None
+    period0 = float(np.median(np.diff(t)))
+    if period0 <= 0:
+        return None
+    k = np.round((t - t[0]) / period0)
+    a_mat = np.stack([np.ones(len(t)), k], axis=1)
+    sol, *_ = np.linalg.lstsq(a_mat, t, rcond=None)
+    period = float(sol[1])
+    if period <= 0:
+        return None
+    bpm = 60.0 / period
+    if not BPM_MIN <= bpm <= BPM_MAX:
+        return None
+    return bpm
+
+
 def _ac_peaks(env: np.ndarray, *, top: int = 4) -> list[float]:
     """onset 包絡の自己相関からテンポ候補ピーク（BPM）を返す。"""
     import librosa
@@ -189,6 +226,7 @@ class LibrosaConstantTempoEstimator:
         anchor_weight: float = DEFAULT_ANCHOR_WEIGHT,
         refine_span: float = 0.08,
         refine_steps: int = 41,
+        trust_tracker: bool = False,
     ) -> None:
         self.candidate_factors = tuple(candidate_factors)
         self.note_tolerance_sec = note_tolerance_sec
@@ -196,6 +234,7 @@ class LibrosaConstantTempoEstimator:
         self.anchor_weight = anchor_weight
         self.refine_span = refine_span
         self.refine_steps = refine_steps
+        self.trust_tracker = trust_tracker
 
     def _params(self, audio_used: bool) -> dict:
         return {
@@ -205,6 +244,7 @@ class LibrosaConstantTempoEstimator:
             "anchor_weight": self.anchor_weight,
             "refine_span": self.refine_span,
             "audio_used": audio_used,
+            "trust_tracker": self.trust_tracker,
         }
 
     def _refine(self, onsets: np.ndarray, bpm0: float) -> tuple[float, float, float]:
@@ -281,6 +321,22 @@ class LibrosaConstantTempoEstimator:
             period = 60.0 / tempo_t
             phase = float(_beats[0] % period) if len(np.atleast_1d(_beats)) else 0.0
             return TempoEstimate(tempo_t, phase, self.name, params)
+
+        if self.trust_tracker:
+            # 音声トラッカー信頼モード（モジュール docstring 参照）:
+            # テンポ = 生 beat_track の拍列の頑健 LS フィット（トラッカーの
+            # テンポから 6% 超ずれたらトラッカーのテンポへフォールバック）。
+            # ノート格子適合は位相 phi16 の決定のみに使い、テンポは動かさない
+            # （±8% のレベル固定走査でも実曲では格子適合が走査端まで滑って
+            # 108.0 へ退行する実測があるため — docs/BENCHMARKS.md M4b 節）。
+            bpm = _fit_beats_bpm(np.atleast_1d(np.asarray(_beats, dtype=float)))
+            if bpm is None or abs(float(np.log2(bpm / tempo_t))) > np.log2(1.06):
+                bpm = tempo_t
+            _ex, phi16 = _fine_fit(onsets, bpm, self.note_tolerance_sec)
+            phase, _dp_acc = self._dp_phase_and_accent(
+                env, env_times, duration, bpm, phi16
+            )
+            return TempoEstimate(bpm, phase % (60.0 / bpm), self.name, params)
 
         seeds = [tempo_t * f for f in self.candidate_factors]
         seeds += [p * f for p in _ac_peaks(env) for f in AC_PEAK_FACTORS]

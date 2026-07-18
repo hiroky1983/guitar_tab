@@ -147,20 +147,27 @@ class BeatThisTempoEstimator:
         checkpoint: str = DEFAULT_CHECKPOINT,
         device: str | None = None,
         dbn: bool = False,
+        trust_tracker: bool = False,
     ) -> None:
         resolved = venv_python or os.environ.get(ENV_VAR) or DEFAULT_VENV_PYTHON
         self.venv_python = Path(resolved)
         self.checkpoint = checkpoint
         self.device = device or os.environ.get(DEVICE_ENV_VAR) or DEFAULT_DEVICE
         self.dbn = dbn
+        # 音声トラッカー信頼モード（M4b）。Beat This! 経路は構造上すでに
+        # トラッカー信頼（テンポレベル = median IOI、ノート格子はレベル固定
+        # ±8% の精密化のみ）なので主経路の挙動は変わらず、拍が取れなかった
+        # ときの librosa フォールバックにのみ伝播する。
+        self.trust_tracker = trust_tracker
         # レベル固定の精密化（_refine）とノートのみフォールバックに流用
-        self._librosa = LibrosaConstantTempoEstimator()
+        self._librosa = LibrosaConstantTempoEstimator(trust_tracker=trust_tracker)
 
     def _params(self, *, fallback: str | None) -> dict:
         params: dict = {
             "checkpoint": self.checkpoint,
             "device": self.device,
             "dbn": self.dbn,
+            "trust_tracker": self.trust_tracker,
         }
         if fallback is not None:
             params["fallback"] = fallback

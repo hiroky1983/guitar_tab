@@ -382,6 +382,114 @@ def test_cli_quantize_passes_estimator(monkeypatch, tmp_path):
     assert isinstance(captured["estimator"], BeatThisTempoEstimator)
 
 
+# ---------------------------------------------------------------------------
+# 音声トラッカー信頼モード（trust_tracker）の配線（M4b、実推論なし）
+# ---------------------------------------------------------------------------
+
+
+def test_cli_transcribe_mix_enables_trust_tracker(monkeypatch):
+    """--rhythm-source mix で信頼モードが自動有効化。stem（default）は従来どおり無効。"""
+    import guitartab.cli as cli
+
+    captured = {}
+
+    def fake_pipeline(url, engine, **kwargs):
+        captured.update(kwargs)
+        return Path("notes.json")
+
+    monkeypatch.setattr(cli, "run_transcribe_pipeline", fake_pipeline)
+
+    assert main(["transcribe", "--url", "u"]) == 0
+    assert captured["rhythm_estimator"].trust_tracker is False
+
+    captured.clear()
+    assert main(["transcribe", "--url", "u", "--rhythm-source", "mix"]) == 0
+    assert captured["rhythm_estimator"].trust_tracker is True
+
+    captured.clear()
+    assert (
+        main(
+            [
+                "transcribe",
+                "--url",
+                "u",
+                "--rhythm-source",
+                "mix",
+                "--rhythm-estimator",
+                "beatthis",
+            ]
+        )
+        == 0
+    )
+    assert captured["rhythm_estimator"].trust_tracker is True
+    # beatthis の librosa フォールバックにも伝播する
+    assert captured["rhythm_estimator"]._librosa.trust_tracker is True
+
+
+def test_cli_quantize_trust_tracker_flag(monkeypatch, tmp_path):
+    import guitartab.cli as cli
+
+    notes_path = tmp_path / "notes.json"
+    _write_notes(notes_path)
+    captured = {}
+
+    def fake_stage_quantize(notes, out, *, audio_path=None, estimator=None, force=False):
+        captured["estimator"] = estimator
+
+    monkeypatch.setattr(cli, "stage_quantize", fake_stage_quantize)
+
+    assert main(["quantize", str(notes_path)]) == 0
+    assert captured["estimator"].trust_tracker is False
+
+    assert main(["quantize", str(notes_path), "--trust-tracker"]) == 0
+    assert captured["estimator"].trust_tracker is True
+
+
+def test_pipeline_default_estimator_trust_wiring(monkeypatch, tmp_path):
+    """rhythm_estimator=None のとき mix なら信頼モード、stem なら従来モード。"""
+    import guitartab.pipeline as pl
+    from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+
+    work_dir = tmp_path / "vid"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source = work_dir / "source.wav"
+    source.write_bytes(b"")
+    stem = work_dir / "stems" / "guitar.wav"
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    stem.write_bytes(b"")
+    monkeypatch.setattr(pl, "download_audio", lambda url, root, force=False: source)
+    monkeypatch.setattr(pl, "separate_guitar", lambda src, d, force=False: stem)
+
+    captured = {}
+
+    def fake_stage_quantize(notes, out, *, audio_path=None, estimator=None, force=False):
+        captured["estimator"] = estimator
+        from guitartab.rhythm.estimate import TempoEstimate
+        from guitartab.rhythm.quantize import quantize_notes
+        from guitartab.rhythm.schema import save_rhythm
+        from guitartab.transcribe.base import load_notes
+
+        rhythm = quantize_notes(load_notes(notes), TempoEstimate(100.0, 0.0, "fake"))
+        save_rhythm(rhythm, out)
+        return rhythm
+
+    monkeypatch.setattr(pl, "stage_quantize", fake_stage_quantize)
+
+    for rhythm_source, expected in [("stem", False), ("mix", True)]:
+        captured.clear()
+        pl.run_transcribe_pipeline(
+            "https://example.com/x",
+            _FakeEngine(),
+            work_root=tmp_path,
+            rhythm_source=rhythm_source,
+            rhythm_estimator=None,
+            force=True,
+        )
+        est = captured["estimator"]
+        assert isinstance(est, LibrosaConstantTempoEstimator)
+        assert est.trust_tracker is expected
+
+
 def test_cli_midi_and_musicxml_accept_rhythm_flag(tmp_path, capsys):
     notes_path = tmp_path / "notes.json"
     _write_notes(notes_path)
