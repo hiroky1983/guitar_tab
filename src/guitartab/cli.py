@@ -41,6 +41,23 @@ from guitartab.transcribe.muscriptor import MuScriptorEngine
 from guitartab.transcribe.yourmt3 import YourMT3Engine
 
 ENGINE_NAMES = ["basicpitch", "yourmt3", "muscriptor"]
+RHYTHM_ESTIMATOR_NAMES = ["librosa", "beatthis"]
+
+
+def build_rhythm_estimator(name: str):
+    """--rhythm-estimator の名前から TempoEstimator を構築する。"""
+    if name == "beatthis":
+        from guitartab.rhythm.beatthis import BeatThisTempoEstimator
+
+        return BeatThisTempoEstimator()
+    if name == "librosa":
+        from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+
+        return LibrosaConstantTempoEstimator()
+    raise SystemExit(
+        f"unknown rhythm estimator: {name} "
+        f"(available: {', '.join(RHYTHM_ESTIMATOR_NAMES)})"
+    )
 
 
 def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
@@ -165,6 +182,8 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         work_root=args.work,
         separate=not args.no_separate,
         quantize=not args.no_quantize,
+        rhythm_source=args.rhythm_source,
+        rhythm_estimator=build_rhythm_estimator(args.rhythm_estimator),
         force=args.force,
     )
     print(notes_path)
@@ -225,7 +244,13 @@ def cmd_quantize(args: argparse.Namespace) -> int:
     audio_path = args.audio
     if audio_path is not None and not audio_path.exists():
         raise SystemExit(f"audio not found: {audio_path}")
-    stage_quantize(notes_path, out_path, audio_path=audio_path, force=args.force)
+    stage_quantize(
+        notes_path,
+        out_path,
+        audio_path=audio_path,
+        estimator=build_rhythm_estimator(args.rhythm_estimator),
+        force=args.force,
+    )
     print(out_path)
     return 0
 
@@ -297,15 +322,7 @@ def _cmd_eval_rhythm(args: argparse.Namespace) -> int:
         format_rhythm_table,
         run_rhythm_benchmark,
     )
-    if args.rhythm_estimator == "beatthis":
-        from guitartab.rhythm.beatthis import BeatThisTempoEstimator
-
-        estimator = BeatThisTempoEstimator()
-    else:
-        from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
-
-        estimator = LibrosaConstantTempoEstimator()
-
+    estimator = build_rhythm_estimator(args.rhythm_estimator)
     items = discover_rhythm_items(args.eval_data)
     if not items:
         print(
@@ -347,6 +364,21 @@ def main(argv: list[str] | None = None) -> int:
         "--no-quantize",
         action="store_true",
         help="quantize（テンポ推定+格子スナップ）をスキップして固定 120BPM 近似で出力する",
+    )
+    p_tr.add_argument(
+        "--rhythm-source",
+        choices=["stem", "mix"],
+        default="stem",
+        help="quantize のテンポ・拍推定に使う音声（M4b）。stem = 転写に使った音声"
+        "そのもの（default）/ mix = 分離前の原曲ミックス source.wav"
+        "（転写ノートはステム由来のまま）",
+    )
+    p_tr.add_argument(
+        "--rhythm-estimator",
+        choices=RHYTHM_ESTIMATOR_NAMES,
+        default="librosa",
+        help="quantize のテンポ推定器（librosa = M4a 候補 A / beatthis = M4b 候補 B。"
+        "beatthis は専用 venv .venv-beatthis が必要）",
     )
     p_tr.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     _add_common_engine_args(p_tr)
@@ -391,6 +423,13 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="拍推定に使う音声（ギターステム等。省略時はノート onset のみで推定）",
+    )
+    p_q.add_argument(
+        "--rhythm-estimator",
+        choices=RHYTHM_ESTIMATOR_NAMES,
+        default="librosa",
+        help="テンポ推定器（librosa = M4a 候補 A / beatthis = M4b 候補 B。"
+        "beatthis は専用 venv .venv-beatthis が必要）",
     )
     p_q.add_argument(
         "--out",
@@ -478,7 +517,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_ev.add_argument(
         "--rhythm-estimator",
-        choices=["librosa", "beatthis"],
+        choices=RHYTHM_ESTIMATOR_NAMES,
         default="librosa",
         help="--rhythm のテンポ推定器（librosa = M4a 候補 A / beatthis = M4b 候補 B。"
         "beatthis は専用 venv .venv-beatthis が必要）",

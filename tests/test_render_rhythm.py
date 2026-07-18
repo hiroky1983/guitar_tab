@@ -241,6 +241,147 @@ def test_cli_quantize_refuses_eval_data_output(tmp_path):
         main(["quantize", str(notes_path), "--out", str(repo_eval)])
 
 
+# ---------------------------------------------------------------------------
+# rhythm-source / rhythm-estimator の配線（実推論なし、M4b）
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEstimator:
+    """estimate() に渡された audio_path を記録するだけの TempoEstimator。"""
+
+    name = "recording"
+
+    def __init__(self):
+        self.audio_paths = []
+
+    def estimate(self, onsets_sec, *, audio_path=None):
+        from guitartab.rhythm.estimate import TempoEstimate
+
+        self.audio_paths.append(audio_path)
+        return TempoEstimate(100.0, 0.0, self.name)
+
+
+class _FakeEngine:
+    name = "fake"
+
+    def transcribe(self, audio_path):
+        from guitartab.transcribe.base import NoteEvent
+
+        beat = 0.6
+        return [
+            NoteEvent(onset_sec=k * beat / 4, offset_sec=k * beat / 4 + 0.1, midi_pitch=60)
+            for k in range(64)
+        ]
+
+
+def _run_pipeline_with_stubs(monkeypatch, tmp_path, **kwargs):
+    """download / separate をスタブして run_transcribe_pipeline を実行する。"""
+    import guitartab.pipeline as pl
+
+    work_dir = tmp_path / "vid"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source = work_dir / "source.wav"
+    source.write_bytes(b"")
+    stem = work_dir / "stems" / "guitar.wav"
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    stem.write_bytes(b"")
+
+    monkeypatch.setattr(pl, "download_audio", lambda url, root, force=False: source)
+    monkeypatch.setattr(
+        pl, "separate_guitar", lambda src, stems_dir, force=False: stem
+    )
+    estimator = _RecordingEstimator()
+    pl.run_transcribe_pipeline(
+        "https://example.com/x",
+        _FakeEngine(),
+        work_root=tmp_path,
+        rhythm_estimator=estimator,
+        **kwargs,
+    )
+    return estimator, source, stem
+
+
+def test_pipeline_rhythm_source_default_stem(monkeypatch, tmp_path):
+    estimator, _source, stem = _run_pipeline_with_stubs(monkeypatch, tmp_path)
+    assert estimator.audio_paths == [stem]
+
+
+def test_pipeline_rhythm_source_mix_uses_source_wav(monkeypatch, tmp_path):
+    estimator, source, _stem = _run_pipeline_with_stubs(
+        monkeypatch, tmp_path, rhythm_source="mix"
+    )
+    assert estimator.audio_paths == [source]
+
+
+def test_pipeline_rhythm_source_mix_without_separate(monkeypatch, tmp_path):
+    # --no-separate でも mix 指定は source.wav（= 転写入力と同一）を使う
+    estimator, source, _stem = _run_pipeline_with_stubs(
+        monkeypatch, tmp_path, rhythm_source="mix", separate=False
+    )
+    assert estimator.audio_paths == [source]
+
+
+def test_pipeline_rejects_unknown_rhythm_source(monkeypatch, tmp_path):
+    with pytest.raises(ValueError, match="rhythm_source"):
+        _run_pipeline_with_stubs(monkeypatch, tmp_path, rhythm_source="drums")
+
+
+def test_cli_transcribe_passes_rhythm_source_and_estimator(monkeypatch):
+    import guitartab.cli as cli
+    from guitartab.rhythm.beatthis import BeatThisTempoEstimator
+    from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+
+    captured = {}
+
+    def fake_pipeline(url, engine, **kwargs):
+        captured.update(kwargs)
+        return Path("notes.json")
+
+    monkeypatch.setattr(cli, "run_transcribe_pipeline", fake_pipeline)
+    assert main(["transcribe", "--url", "u"]) == 0
+    assert captured["rhythm_source"] == "stem"
+    assert isinstance(captured["rhythm_estimator"], LibrosaConstantTempoEstimator)
+
+    captured.clear()
+    assert (
+        main(
+            [
+                "transcribe",
+                "--url",
+                "u",
+                "--rhythm-source",
+                "mix",
+                "--rhythm-estimator",
+                "beatthis",
+            ]
+        )
+        == 0
+    )
+    assert captured["rhythm_source"] == "mix"
+    assert isinstance(captured["rhythm_estimator"], BeatThisTempoEstimator)
+
+
+def test_cli_transcribe_rejects_unknown_rhythm_source():
+    with pytest.raises(SystemExit):
+        main(["transcribe", "--url", "u", "--rhythm-source", "drums"])
+
+
+def test_cli_quantize_passes_estimator(monkeypatch, tmp_path):
+    import guitartab.cli as cli
+    from guitartab.rhythm.beatthis import BeatThisTempoEstimator
+
+    notes_path = tmp_path / "notes.json"
+    _write_notes(notes_path)
+    captured = {}
+
+    def fake_stage_quantize(notes, out, *, audio_path=None, estimator=None, force=False):
+        captured["estimator"] = estimator
+
+    monkeypatch.setattr(cli, "stage_quantize", fake_stage_quantize)
+    assert main(["quantize", str(notes_path), "--rhythm-estimator", "beatthis"]) == 0
+    assert isinstance(captured["estimator"], BeatThisTempoEstimator)
+
+
 def test_cli_midi_and_musicxml_accept_rhythm_flag(tmp_path, capsys):
     notes_path = tmp_path / "notes.json"
     _write_notes(notes_path)

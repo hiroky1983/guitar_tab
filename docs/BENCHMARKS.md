@@ -767,3 +767,83 @@ B'z「ギリギリchop」（86.2 秒、work/wr7xTGTG-Mo）で入力ソース比�
 uv run python -m guitartab eval --rhythm --rhythm-estimator beatthis --eval-data eval_data/guitarset
 uv run python -m guitartab eval --rhythm --rhythm-estimator beatthis --eval-data eval_data/rhythm_synth/clean
 ```
+
+---
+
+## 2026-07-18: M4b — ミックス経路 実曲検証（「リズムはミックス、音符はステム」）
+
+前節の推奨（ミックス入力での Beat This! 再評価）の実施。パイプラインに
+quantize のリズム推定入力を選ぶ `--rhythm-source {stem,mix}`（transcribe、
+default = stem = 従来動作。mix は work/{id}/source.wav を使い、転写ノートは
+ステム由来のまま）と、`transcribe` / `quantize` サブコマンドの
+`--rhythm-estimator {librosa,beatthis}` を追加した。配線テスト 7 件追加
+（pytest 計 173 件通過）。
+
+### 実曲検証（B'z「ギリギリchop」86.2 秒、work/wr7xTGTG-Mo、参考値）
+
+**人手拍ラベルのない 1 曲の参考検証であり、M4b ゲート判定ではない**（ゲートは
+設計 §6 のとおり人手拍ラベル付き実曲 ≥2 曲で行う）。参照テンポは公式 TAB 譜
+由来の既知情報 **117 BPM・4/4**（docs/RESEARCH_2026-07-17.md §1.1）。
+notes.json は既存の basic-pitch（M1 構成）× guitar ステム転写の 210 ノートを
+4 構成で共通使用。各構成 1 回実測。
+
+| 構成 | 推定テンポ (rhythm.json) | vs 117 | 族判定（117 × {1/3,1/2,1,2,3} の ±4%） |
+|---|---:|---:|---|
+| librosa × stem | 108.0 | −7.7% | 族外 |
+| librosa × mix | 108.0 | −7.7% | 族外 |
+| beatthis × stem | 145.2 | +24.1% | 族外 |
+| **beatthis × mix** | **242.8** | +107.5% | **2 倍族（234.0 の +3.7%）— 唯一の族正解** |
+
+生の拍列（推定器の前段トラッカー出力、同一音声・各 1 回実測）:
+
+| トラッカー × 入力 | 拍数 | median IOI | IOI std | IOI 換算テンポ |
+|---|---:|---:|---:|---:|
+| librosa beat_track × stem | 164 | 0.511s | 0.029s | 117.5 |
+| librosa beat_track × mix | 159 | 0.511s | 0.020s | 117.5 |
+| Beat This! × stem | 147 | 0.400s | **0.659s（崩壊）** | — |
+| Beat This! × mix | 327 | 0.260s | 0.032s | 230.8（8 分レベル） |
+
+観察（実測に基づく）:
+
+1. **ミックス入力はどちらのトラッカーにも一貫した拍列を与える**（IOI std
+   0.020〜0.032s）。Beat This! のステム崩壊（std 0.659s）は前節スモークの再確認。
+2. **librosa の生 beat_track はステム・ミックスとも 117.5 BPM（参照 +0.4%）を
+   当てているのに、M4a の候補選択層が両構成とも 108.0 に上書きして族外へ落とす**。
+   両構成の最終値はビット同一（108.04694…）で、選択層のスコアがノート格子適合
+   （4 構成共通の同一ノート列）に支配され、音声側の手がかり（librosa アンカー
+   117.5）が負けていることを示す。歪みエレキ実曲では「選択層が生トラッカーより
+   悪い」という新規の実測ファクト。
+3. beatthis × mix は 8 分レベルの拍列（median IOI 0.260s）を median-IOI レベル
+   決定がそのまま採用して 2 倍族（242.8 = 2 × 121.4）。レベル固定 ±8% の
+   精密化では半分レベルに戻る余地がない。
+4. 4 構成とも 117±4%（1 倍レベル）には入らなかった。
+
+### mix 経路 rhythm.json での MusicXML 再生成（beatthis × mix）
+
+| 出力 | 小節数 | テンポ表記 | divisions |
+|---|---:|---:|---:|
+| 従来の固定 120BPM 近似（work の output.musicxml） | 42 | 120 | 4 |
+| beatthis × mix の rhythm.json | 85 | 242.8 | 12 |
+
+2 倍族推定のため「倍テンポ表記」になり小節数も約 2 倍（42 → 85）。
+参考の算術換算: 半分レベルの 121.4 BPM・4/4 なら 86.2 秒 ≒ 44 小節に相当し、
+公式 TAB の曲想（117 BPM・4/4）に整合するのはそちらのレベル。
+
+### M4b 本判定（人手拍ラベル付き実曲）に向けた示唆（実測に基づく）
+
+- ミックス経路は拍列の一貫性で明確に優位。残る誤りは**テンポレベル（オクターブ）
+  の選択に集約**された（librosa は選択層の退行、Beat This! は 8 分レベル追跡）。
+- 本判定（人手拍ラベル ≥2 曲、Beat F ≥ 0.70）の比較群には、
+  (a) ミックス入力時に M4a 候補選択層をバイパスして生 beat_track を使う構成、
+  (b) Beat This! のテンポレベル折り畳み（例: 拍あたりノート密度による 2 倍族判定）
+  を含めて実測すべき、というのが本検証の示唆。
+
+再現コマンド:
+
+```
+uv run python -m guitartab quantize work/wr7xTGTG-Mo/notes.json \
+  --rhythm-estimator beatthis --audio work/wr7xTGTG-Mo/source.wav --out <OUT>/rhythm.json
+uv run python -m guitartab musicxml work/wr7xTGTG-Mo/tab.json \
+  --rhythm <OUT>/rhythm.json --out <OUT>/output.musicxml
+uv run python -m guitartab transcribe --url <URL> --rhythm-source mix --rhythm-estimator beatthis
+```

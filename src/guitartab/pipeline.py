@@ -194,6 +194,8 @@ def run_transcribe_pipeline(
     work_root: Path = DEFAULT_WORK_ROOT,
     separate: bool = True,
     quantize: bool = True,
+    rhythm_source: str = "stem",
+    rhythm_estimator: TempoEstimator | None = None,
     force: bool = False,
 ) -> Path:
     """download → separate → transcribe → tab → quantize → midi → musicxml を
@@ -203,7 +205,15 @@ def run_transcribe_pipeline(
     quantize は work/{id}/rhythm.json、midi は work/{id}/output.mid、
     musicxml は work/{id}/output.musicxml に残る。quantize が失敗した場合は
     警告を出し、midi / musicxml は従来の固定 120BPM 近似で続行する。
+
+    rhythm_source はテンポ・拍推定に使う音声の選択（M4b）:
+    "stem" = 転写に使った音声そのもの（従来動作）、
+    "mix" = 分離前の原曲ミックス work/{id}/source.wav
+    （転写ノートは従来どおりステム由来のまま = リズムだけミックスから取る）。
+    rhythm_estimator は TempoEstimator の差し替え（None = librosa 候補 A）。
     """
+    if rhythm_source not in ("stem", "mix"):
+        raise ValueError(f"rhythm_source must be 'stem' or 'mix': {rhythm_source!r}")
     source = stage_download(url, work_root, force=force)
     work_dir = source.parent
     audio = stage_separate(source, force=force) if separate else source
@@ -219,8 +229,13 @@ def run_transcribe_pipeline(
     if quantize:
         try:
             rhythm_path = work_dir / RHYTHM_FILENAME
+            rhythm_audio = source if rhythm_source == "mix" else audio
             stage_quantize(
-                notes_path, rhythm_path, audio_path=audio, force=force
+                notes_path,
+                rhythm_path,
+                audio_path=rhythm_audio,
+                estimator=rhythm_estimator,
+                force=force,
             )
         except Exception:
             traceback.print_exc(file=sys.stderr)
