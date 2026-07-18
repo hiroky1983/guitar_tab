@@ -130,8 +130,20 @@ CLI フラグ `--ms-instruments` / `--ms-cfg-coef` / `--ms-batch-size` / `--ms-d
 | クリーンギター（アコギ・クリーントーン） | **`--engine muscriptor`** | dev 0.879 vs basic-pitch tuned 0.864 |
 | 歪みエレキ | **`--engine basicpitch`（デフォルト）+ M1 tuned フラグ** | 合成 highgain 0.757 vs MuScriptor 0.685 |
 
-transcribe パイプラインのデフォルトエンジンは basicpitch のまま（使い分けの自動化は将来課題）。
-クリーン曲は `--engine muscriptor` を推奨します。
+この使い分けは **`--engine auto` で自動化できます**（2026-07-19 実装）。separate 後の
+ギターステムをクレストファクタ + スペクトル平坦度で判定し、クリーンなら muscriptor、
+歪みなら basicpitch（M1 tuned 構成 onset 0.75 / frame 0.4 / min_len 100ms を
+プリセット適用。`--bp-*` フラグで個別上書き可）を選択します。判定精度は既存 30 クリップ
++ 実曲ステム 1 本で 31/31（実測は `docs/BENCHMARKS.md`「エンジン自動選択」節。
+実クリーンエレキのステムは未検証の限界あり）。判定結果は
+`work/{id}/engine_selection.json` に記録され、MuScriptor が使えない環境
+（venv なし / HF_TOKEN なし）では警告つきで basicpitch にフォールバックします。
+
+```bash
+python -m guitartab transcribe --url <YouTube URL> --engine auto
+```
+
+transcribe パイプラインのデフォルトエンジンは basicpitch のまま（auto は明示指定時のみ）。
 
 ## 使い方
 

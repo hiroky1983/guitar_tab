@@ -37,6 +37,7 @@ from guitartab.tab.render_ascii import (
 from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM, save_midi
 from guitartab.tab.render_musicxml import save_musicxml
 from guitartab.transcribe.base import NoteEvent, TranscriberEngine, load_notes, save_notes
+from guitartab.transcribe.select import ENGINE_SELECTION_FILENAME, AutoEngineSelector
 
 DEFAULT_WORK_ROOT = Path("work")
 NOTES_FILENAME = "notes.json"
@@ -189,7 +190,7 @@ def stage_musicxml(
 
 def run_transcribe_pipeline(
     url: str,
-    engine: TranscriberEngine,
+    engine: TranscriberEngine | AutoEngineSelector,
     *,
     work_root: Path = DEFAULT_WORK_ROOT,
     separate: bool = True,
@@ -224,6 +225,13 @@ def run_transcribe_pipeline(
     source = stage_download(url, work_root, force=force)
     work_dir = source.parent
     audio = stage_separate(source, force=force) if separate else source
+    if isinstance(engine, AutoEngineSelector):
+        # --engine auto: separate 後のステム（--no-separate 時は source.wav）を
+        # クリーン/歪み判定して実エンジンへ差し替える。判定は毎回実行して
+        # 記録を work/{id}/engine_selection.json に残す（軽量なのでキャッシュ不要）。
+        engine = engine.resolve(
+            audio, selection_path=work_dir / ENGINE_SELECTION_FILENAME
+        )
     notes_path = work_dir / NOTES_FILENAME
     stage_transcribe(audio, engine, notes_path, force=force)
     stage_tab(

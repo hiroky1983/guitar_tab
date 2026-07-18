@@ -932,3 +932,77 @@ uv run python -m guitartab musicxml work/wr7xTGTG-Mo/tab.json \
 uv run python -m guitartab transcribe --url <URL> --rhythm-source mix  # trust 自動有効化
 uv run python -m guitartab eval --rhythm --eval-data eval_data/guitarset  # stem 回帰確認
 ```
+
+---
+
+## 2026-07-19: エンジン自動選択 — クリーン/歪み判定器（STATUS 残課題 3）
+
+エンジン戦略（クリーン = MuScriptor / 歪み = basic-pitch M1 tuned、DESIGN.md「エンジン
+採用決定」）の使い分けを自動化する軽量判定器を `transcribe/select.py` に実装し、
+`--engine auto`（transcribe のみ、デフォルトは従来どおり basicpitch）として配線した。
+本節はその判定器の設計決定に使った実測記録。
+
+### 判定器の設計（本実測で決定）
+
+特徴量は本体 venv（numpy + soundfile）のみで計算する 2 つ:
+
+- **クレストファクタ** = グローバルピーク / 有効区間 RMS（フレーム 2048 / ホップ 512、
+  有効区間 = フレーム RMS がピーク比 -40dB 超）
+- **スペクトル平坦度**（500–5000Hz、有効区間平均パワースペクトルの幾何平均/算術平均）
+
+判定ルール: **distorted ⇔ クレストファクタ < 5.0 or 平坦度 ≥ 0.40**（それ以外は clean）。
+
+### 31 クリップ実測（各 1 回、決定論的）
+
+データ: guitarset dev 10（クリーン正解）+ distorted_synth crunch/highgain 各 10（歪み正解、
+いずれも読み取りのみ）+ 実曲ステム `work/wr7xTGTG-Mo/stems/guitar.wav`（歪みエレキ、
+Demucs 分離済み、2026-07-17 E2E 検証と同一ファイル）。
+
+| セット | クレストファクタ範囲 | 平坦度範囲 | 判定 | 正答 |
+|---|---|---|---|---:|
+| clean（guitarset dev 10） | 6.85–13.81 | 0.074–0.254 | 全て clean | 10/10 |
+| crunch（10） | 1.89–3.67 | 0.201–0.380 | 全て distorted | 10/10 |
+| highgain（10） | 1.39–1.61 | 0.427–0.613 | 全て distorted | 10/10 |
+| 実曲ステム（1） | 6.30 | 0.788 | distorted | 1/1 |
+| **合計** | | | | **31/31** |
+
+トラック別（クレスト / 平坦度）:
+
+| track | clean | crunch | highgain |
+|---|---|---|---|
+| 00_BN3-119-G | 8.59 / 0.144 | 2.35 / 0.201 | 1.40 / 0.533 |
+| 00_Rock2-85-F | 12.93 / 0.226 | 3.67 / 0.231 | 1.49 / 0.534 |
+| 01_Funk1-97-C | 8.73 / 0.207 | 3.12 / 0.228 | 1.61 / 0.532 |
+| 02_Jazz2-110-Bb | 6.85 / 0.231 | 1.93 / 0.289 | 1.39 / 0.557 |
+| 02_SS1-68-E | 9.30 / 0.199 | 1.89 / 0.339 | 1.39 / 0.576 |
+| 03_Jazz1-200-B | 9.49 / 0.165 | 2.02 / 0.365 | 1.43 / 0.562 |
+| 04_Funk2-119-G | 9.23 / 0.220 | 2.07 / 0.380 | 1.45 / 0.613 |
+| 04_Rock3-148-C | 11.95 / 0.129 | 2.28 / 0.232 | 1.55 / 0.427 |
+| 05_BN2-166-Ab | 11.93 / 0.074 | 2.15 / 0.214 | 1.41 / 0.488 |
+| 05_SS2-107-Ab | 13.81 / 0.254 | 2.33 / 0.295 | 1.41 / 0.521 |
+
+### 観察と正直な注記（実測に基づく）
+
+- **合成 30 クリップはクレストファクタ単独で完全分離**（クリーン最小 6.85 vs crunch 最大
+  3.67。閾値 5.0 はその中間。distorted_synth/README.md の目安実測 8.7→2.4→1.4 と整合）。
+- **ただし実曲の Demucs ステムはクレスト単独では誤判定する**: wr7xTGTG-Mo/guitar.wav は
+  歪みエレキだがクレスト 6.30（無音・ブリード区間とミックス由来のダイナミクスで RMS が
+  下がるため）で、クレスト閾値 5.0 では clean 側に落ちる。歪みの相互変調成分を捉える
+  スペクトル平坦度（0.788 vs クリーン最大 0.254）の OR 条件（≥ 0.40）で救済した。
+- **限界**: (1) 実録音の歪み正例は上記 1 ステムのみ。実クリーンエレキ（クリーントーン）の
+  Demucs ステムは 0 サンプルで未検証 — Demucs アーティファクトが平坦度を押し上げて
+  歪み側に誤判定するリスクは実測できていない。(2) 閾値は本 31 クリップ上の in-sample
+  選択（holdout なし。guitarset_holdout は不使用）。(3) crunch と clean の平坦度は重複する
+  （0.201–0.380 vs 0.074–0.254）ため平坦度単独では 25/30 に落ちる。2 特徴の OR が必須。
+- auto 選択時の basic-pitch は M1 tuned プリセット（onset 0.75 / frame 0.4 / min_len 100ms、
+  本ファイル 2026-07-17 スイープ + holdout 検証の採用構成）をコード定数
+  `BASICPITCH_TUNED_PRESET` として適用。MuScriptor はエンジンデフォルト
+  （ac+dist / cfg 1.5）のまま。判定結果・特徴量・選択エンジン・フォールバック理由は
+  `work/{id}/engine_selection.json` に記録される。
+
+再現コマンド:
+
+```
+uv run python -m guitartab transcribe --url <URL> --engine auto
+uv run pytest tests/test_select.py   # 判定器・配線・プリセットの回帰テスト
+```

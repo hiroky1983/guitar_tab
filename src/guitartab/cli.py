@@ -41,6 +41,9 @@ from guitartab.transcribe.muscriptor import MuScriptorEngine
 from guitartab.transcribe.yourmt3 import YourMT3Engine
 
 ENGINE_NAMES = ["basicpitch", "yourmt3", "muscriptor"]
+# "auto" は transcribe のみ（separate 後のステムをクリーン/歪み判定して
+# muscriptor / basicpitch を自動選択。eval はベンチ条件を明示するため対象外）
+TRANSCRIBE_ENGINE_NAMES = ENGINE_NAMES + ["auto"]
 RHYTHM_ESTIMATOR_NAMES = ["librosa", "beatthis"]
 
 
@@ -64,7 +67,52 @@ def build_rhythm_estimator(name: str, *, trust_tracker: bool = False):
     )
 
 
-def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
+def _parse_ms_instruments(args: argparse.Namespace) -> list[str] | None:
+    if args.ms_instruments is None:
+        return None
+    instruments = [s.strip() for s in args.ms_instruments.split(",") if s.strip()]
+    if not instruments:
+        raise SystemExit("--ms-instruments must contain at least one instrument name")
+    return instruments
+
+
+def build_engine(
+    name: str, args: argparse.Namespace
+) -> "TranscriberEngine | AutoEngineSelector":
+    """エンジン名からエンジンを構築する。"auto" のみ AutoEngineSelector を返す
+    （実エンジンへの解決は separate 後にパイプラインが行う）。"""
+    if name == "auto":
+        from guitartab.transcribe.select import AutoEngineSelector
+
+        # --bp-* の明示指定は M1 tuned プリセットを個別に上書きする
+        bp_overrides = {
+            k: v
+            for k, v in {
+                "onset_threshold": args.bp_onset_threshold,
+                "frame_threshold": args.bp_frame_threshold,
+                "minimum_note_length": args.bp_minimum_note_length,
+                "minimum_frequency": args.bp_minimum_frequency,
+                "maximum_frequency": args.bp_maximum_frequency,
+                "melodia_trick": False if args.bp_no_melodia_trick else None,
+            }.items()
+            if v is not None
+        }
+        ms_kwargs = {
+            k: v
+            for k, v in {
+                "instruments": _parse_ms_instruments(args),
+                "cfg_coef": args.ms_cfg_coef,
+                "batch_size": args.ms_batch_size,
+                "device": args.ms_device,
+            }.items()
+            if v is not None
+        }
+        return AutoEngineSelector(
+            basicpitch_python=args.basicpitch_python,
+            muscriptor_python=args.muscriptor_python,
+            bp_overrides=bp_overrides,
+            ms_kwargs=ms_kwargs,
+        )
     if name == "basicpitch":
         return BasicPitchEngine(
             venv_python=args.basicpitch_python,
@@ -82,13 +130,7 @@ def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
             device=args.yourmt3_device,
         )
     if name == "muscriptor":
-        instruments = None
-        if args.ms_instruments is not None:
-            instruments = [s.strip() for s in args.ms_instruments.split(",") if s.strip()]
-            if not instruments:
-                raise SystemExit(
-                    "--ms-instruments must contain at least one instrument name"
-                )
+        instruments = _parse_ms_instruments(args)
         return MuScriptorEngine(
             venv_python=args.muscriptor_python,
             instruments=instruments,
@@ -365,7 +407,14 @@ def main(argv: list[str] | None = None) -> int:
     p_tr = sub.add_parser("transcribe", help="download → separate → transcribe")
     p_tr.add_argument("--url", required=True, help="YouTube URL")
     p_tr.add_argument("--work", type=Path, default=DEFAULT_WORK_ROOT)
-    p_tr.add_argument("--engine", default="basicpitch", choices=ENGINE_NAMES)
+    p_tr.add_argument(
+        "--engine",
+        default="basicpitch",
+        choices=TRANSCRIBE_ENGINE_NAMES,
+        help="転写エンジン。auto = separate 後のステムをクリーン/歪み判定して "
+        "muscriptor（クリーン）/ basicpitch M1 tuned プリセット（歪み）を自動選択"
+        "（判定記録は work/{id}/engine_selection.json）",
+    )
     p_tr.add_argument(
         "--no-separate",
         action="store_true",
