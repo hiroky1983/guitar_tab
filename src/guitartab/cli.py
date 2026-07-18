@@ -33,6 +33,7 @@ from guitartab.tab.render_ascii import DEFAULT_LINE_WIDTH, DEFAULT_TIME_STEP_SEC
 from guitartab.tab.render_midi import DEFAULT_TEMPO_BPM
 from guitartab.transcribe.base import TranscriberEngine
 from guitartab.transcribe.basicpitch import BasicPitchEngine
+from guitartab.transcribe.muscriptor import MuScriptorEngine
 from guitartab.transcribe.yourmt3 import YourMT3Engine
 
 ENGINE_NAMES = ["basicpitch", "yourmt3", "muscriptor"]
@@ -56,9 +57,19 @@ def build_engine(name: str, args: argparse.Namespace) -> TranscriberEngine:
             device=args.yourmt3_device,
         )
     if name == "muscriptor":
-        raise SystemExit(
-            "muscriptor engine is not implemented yet (M0: pending Apple Silicon "
-            "verification, see docs/DESIGN.md)"
+        instruments = None
+        if args.ms_instruments is not None:
+            instruments = [s.strip() for s in args.ms_instruments.split(",") if s.strip()]
+            if not instruments:
+                raise SystemExit(
+                    "--ms-instruments must contain at least one instrument name"
+                )
+        return MuScriptorEngine(
+            venv_python=args.muscriptor_python,
+            instruments=instruments,
+            cfg_coef=args.ms_cfg_coef,
+            batch_size=args.ms_batch_size,
+            device=args.ms_device,
         )
     raise SystemExit(f"unknown engine: {name} (available: {', '.join(ENGINE_NAMES)})")
 
@@ -94,6 +105,36 @@ def _add_common_engine_args(p: argparse.ArgumentParser) -> None:
         default=None,
         metavar="DEV",
         help="推論デバイス cpu|mps (default: $GUITARTAB_YOURMT3_DEVICE or cpu)",
+    )
+    ms = p.add_argument_group("muscriptor params")
+    ms.add_argument(
+        "--muscriptor-python",
+        type=Path,
+        default=None,
+        metavar="PYTHON",
+        help="MuScriptor 専用 venv の python パス "
+        "(default: $GUITARTAB_MUSCRIPTOR_PYTHON or .venv-muscriptor/bin/python)",
+    )
+    ms.add_argument(
+        "--ms-instruments",
+        default=None,
+        metavar="LIST",
+        help="生成条件付けプロンプト（カンマ区切り、"
+        "default: acoustic_guitar,distorted_electric_guitar）",
+    )
+    ms.add_argument(
+        "--ms-cfg-coef",
+        type=float,
+        default=None,
+        metavar="C",
+        help="classifier-free guidance 係数 (default: 1.5。1.6 以上は縮退暴走の実測あり)",
+    )
+    ms.add_argument("--ms-batch-size", type=int, default=None, metavar="N")
+    ms.add_argument(
+        "--ms-device",
+        default=None,
+        metavar="DEV",
+        help="推論デバイス mps|cpu (default: $GUITARTAB_MUSCRIPTOR_DEVICE or mps)",
     )
     # basic_pitch.inference.predict() のネイティブ推論パラメータ。
     # 未指定（None）は predict() のデフォルト = 従来動作。

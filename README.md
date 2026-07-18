@@ -91,6 +91,48 @@ YourMT3+ は GPL/Apache 混在ライセンスのため**コード・チェック
 デフォルト CPU（M2 では MPS とほぼ同速のため安定側）。`GUITARTAB_YOURMT3_DEVICE=mps`
 または `--yourmt3-device mps` で切替可能です。
 
+### MuScriptor の運用
+
+MuScriptor（Kyutai）は**クリーンギターの正式エンジン**です
+（`docs/DESIGN.md`「エンジン採用決定（2026-07-18）」。クリーン dev F1 0.879 で首位）。
+basic-pitch と同じ別 venv サブプロセス方式で動かします
+（`src/guitartab/transcribe/muscriptor.py` + `_muscriptor_runner.py`。
+検証記録は `docs/MUSCRIPTOR_VERIFICATION_2026-07-17.md` / `docs/MUSCRIPTOR_RESULTS_2026-07-17.md`）:
+
+1. 専用 venv を作る（Python 3.11）:
+
+   ```bash
+   uv venv --python 3.11 .venv-muscriptor
+   uv pip install --python .venv-muscriptor/bin/python muscriptor
+   ```
+
+   （2026-07-17 動作確認構成: muscriptor 0.2.1 / torch 2.13.0）
+
+2. 重みはゲート付き HF リポジトリ `MuScriptor/muscriptor-small`（**CC BY-NC・非商用限定**）。
+   HF アカウントでライセンス同意のうえ、`HF_TOKEN=...` をプロジェクト直下の `.env`
+   （gitignore 済み）に書く。`python -m guitartab` 起動時に自動読込され、
+   ランナーのサブプロセスにも環境変数として伝播します。
+
+場所を変える場合は環境変数 `GUITARTAB_MUSCRIPTOR_PYTHON` または CLI の
+`--muscriptor-python` で指定します。推論デバイスはデフォルト MPS
+（`GUITARTAB_MUSCRIPTOR_DEVICE=cpu` または `--ms-device cpu` で切替）。
+
+デフォルト生成パラメータはベンチ採用構成
+（`instruments=acoustic_guitar,distorted_electric_guitar` / `cfg_coef=1.5` / `batch_size=4` / greedy）。
+CLI フラグ `--ms-instruments` / `--ms-cfg-coef` / `--ms-batch-size` / `--ms-device` で変更可能。
+`cfg_coef` 1.6 以上は生成が縮退暴走する実測があるため、ランナーに暴走検知
+（音声1秒あたり 30 ノート超過で明確なエラー終了）を備えています。
+
+### エンジン使い分けの指針（2026-07-18 実測、`docs/BENCHMARKS.md`）
+
+| 対象 | 推奨エンジン | 根拠（実測 F1） |
+|---|---|---|
+| クリーンギター（アコギ・クリーントーン） | **`--engine muscriptor`** | dev 0.879 vs basic-pitch tuned 0.864 |
+| 歪みエレキ | **`--engine basicpitch`（デフォルト）+ M1 tuned フラグ** | 合成 highgain 0.757 vs MuScriptor 0.685 |
+
+transcribe パイプラインのデフォルトエンジンは basicpitch のまま（使い分けの自動化は将来課題）。
+クリーン曲は `--engine muscriptor` を推奨します。
+
 ## 使い方
 
 ```bash

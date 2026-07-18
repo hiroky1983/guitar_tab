@@ -550,3 +550,9 @@ highgain での mean RTF 0.166（MPS。CFG で計算が約2倍になるがなお
    （IDMT-SMT-Guitar 等）での追試までは、この構成を「合成ベンチ最適」としてのみ扱うこと。
 4. cfg 1.5 は縮退の崖（1.6+で暴走）の直前の動作点であり、未知の入力での安定性リスクがある。
    採用する場合は est ノート数の暴走検知（例: 音声長×10 ノート超で警告）を入れるべき。
+
+---
+
+## 2026-07-18: エンジン統合後の再現確認（MuScriptor 正式統合・M3）
+
+`--engine muscriptor` 統合（`transcribe/muscriptor.py` + `_muscriptor_runner.py`、デフォルト = ベスト構成 ac+dist / cfg 1.5 / batch 4 / MPS / greedy、暴走検知 30 notes/sec）後、`uv run python -m guitartab eval --engine muscriptor`（dev 10トラック・1回実測）で mean P 0.882 / R 0.878 / F1 **0.879** — 前節スイープのベスト構成（0.881/0.878/0.879）を再現（P の +0.001 は丸め内）。
