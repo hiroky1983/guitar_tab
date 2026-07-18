@@ -58,6 +58,16 @@ v1 は Ralph Loop による自動反復改善で開発されたが、以下の�
 
 **M0 で MuScriptor と basic-pitch の2エンジンを同一ベンチにかけ、実測で採用を決める。**
 
+#### エンジン採用決定（2026-07-18、実測に基づく確定）
+
+3エンジン（basic-pitch / MuScriptor small / YourMT3+）を GuitarSet dev・holdout・合成歪みベンチで実測した結果（数値は `docs/BENCHMARKS.md`）:
+
+- **クリーンギター: MuScriptor**（instruments=ac+dist, cfg_coef=1.5 で dev F1 0.879、無過適合で首位）
+- **歪みエレキ: basic-pitch**（M1 tuned 構成で highgain F1 0.757。MuScriptor は生成パラメータ調整でも 0.685 止まり）
+- YourMT3+ は不採用（クリーン 0.922 は学習データ汚染の参考値、歪みで 0.598 に崩壊）。フォールバックとして統合済み。
+
+注意: MuScriptor の cfg 1.6 以上は生成が縮退暴走する（ノート数数千に爆発）。採用時はノート数暴走検知を入れること。合成歪みベンチはアコギ源流のため、実アンプ録音（IDMT-SMT-Guitar 等）での追試までこの序列は暫定。
+
 ### notes → tab（運指割当）
 
 1. **自前 DP（コスト最小化）** — v1 の `transcriber.py` にある弦/フレット割当ロジック（開放弦ボーナス・ポジション移動ペナルティ）を叩き台に、[gtrsnipe](https://github.com/scottvr/gtrsnipe) のコスト関数（フレット幅・手移動・弦切替）を参考に再実装。
