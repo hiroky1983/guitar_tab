@@ -556,3 +556,95 @@ highgain での mean RTF 0.166（MPS。CFG で計算が約2倍になるがなお
 ## 2026-07-18: エンジン統合後の再現確認（MuScriptor 正式統合・M3）
 
 `--engine muscriptor` 統合（`transcribe/muscriptor.py` + `_muscriptor_runner.py`、デフォルト = ベスト構成 ac+dist / cfg 1.5 / batch 4 / MPS / greedy、暴走検知 30 notes/sec）後、`uv run python -m guitartab eval --engine muscriptor`（dev 10トラック・1回実測）で mean P 0.882 / R 0.878 / F1 **0.879** — 前節スイープのベスト構成（0.881/0.878/0.879）を再現（P の +0.001 は丸め内）。
+
+---
+
+## 2026-07-18: M4a リズム量子化 — 一定テンポの拍推定+量子化（ゲート判定: 不合格）
+
+実装: `src/guitartab/rhythm/`（estimate = librosa 候補 A、quantize = 最近傍スナップ、
+rhythm.json）、`eval/rhythm_metrics.py` + `eval/rhythm_benchmark.py`（`eval --rhythm`）。
+合成リズムベンチ `eval_data/rhythm_synth/`（dev 10 トラック × 5 変種、Karplus-Strong 合成、
+生成スクリプト・manifest 同梱）。評価はすべて「GT ノート onset + 音声」入力の
+量子化ステージ単独評価（転写誤差を混ぜない。設計 §4.3-4）。
+
+### ベースライン（librosa.beat.beat_track 素の出力、dev 10、§4.4 の正式再実測）
+
+| 指標 | 値 |
+|---|---|
+| TempoAcc1 | 4/10 |
+| TempoAcc2 | 7/10 |
+| Beat F-measure mean（DP 拍そのまま） | 0.433 |
+
+### 本実装（候補 A: librosa T+AC ピーク候補 → 格子適合+DP アクセント+アンカー選択 → 回帰ポリッシュ）dev 10
+
+| 指標 | 本実装 | ベースライン比 |
+|---|---|---|
+| TempoAcc1 | 5/10 | +1 |
+| TempoAcc2 | 9/10 | +2 |
+| Beat F-measure mean | 0.548 | +0.115 |
+| Beat CMLt / AMLt mean | 0.389 / 0.700 | — |
+| 量子化変位 中央値（トラック中央値の範囲） | 12〜24ms | 参考統計 |
+
+トラック別の主な誤り: 半テンポ選択（Rock2→42.5、Jazz2→55、BN2→83）、
+2 倍（SS1 68→136.5）、族外（Jazz1 200→115.7 のみ A2 失敗）。
+テンポ正解でも拍ラベル（位相の 16 分単位シフト）失敗で beatF=0 が 1 件（Rock3）。
+
+### 合成リズムベンチ（GPA = per-note tick 一致率、10 クリップ mean）
+
+| 変種 | TempoAcc1 | TempoAcc2 | GPA | ゲート基準 | 判定 |
+|---|---:|---:|---:|---|---|
+| clean（一定テンポ） | 6/10 | 10/10 | **0.403** | GPA ≥ 0.95 | **不合格** |
+| slow08（0.8×） | 8/10 | 10/10 | 0.502 | — | — |
+| fast125（1.25×） | 5/10 | 9/10 | 0.202 | — | — |
+| jitter σ=10ms | 7/10 | 9/10 | 0.397 | — | — |
+| jitter σ=20ms | 6/10 | 9/10 | **0.286** | GPA ≥ 0.85 | **不合格** |
+
+clean の GPA 損失の分解（診断）:
+- 半テンポ選択が 4/10 クリップ（GPA ≈ 0）— 8 分主体のクリップでは半テンポ格子も
+  完全適合し、onset 列だけではテンポレベルが原理的に決まらない（設計 §1.3 の
+  「オクターブ曖昧性はオンセット列に内在する」の再確認）。
+- テンポ正解・格子正解だが拍ラベル（定数 tick シフト）誤りが 2/10
+  （Rock2: +42 tick シフト除去後 GPA 0.927、Jazz1: −9 tick 除去後 0.698）。
+- 完全一致（GPA=1.0）は 4/10。
+
+E2E モード（basic-pitch 転写経由、clean）: GPA 0.402 — 単独評価 0.403 と同等。
+**転写誤差による量子化の劣化はほぼゼロ**（設計リスク 7 は本ベンチでは顕在化せず）。
+
+### Holdout ゲート判定（8 トラック、1 回のみ実行）
+
+| 指標 | 実測 | ゲート基準 | 判定 |
+|---|---:|---|---|
+| TempoAcc2 | 7/8 | 8/8 | **不合格**（05_SS3: 92.0 vs GT 98、6.1% ずれで族外） |
+| TempoAcc1 | 4/8 | ≥ 6/8 | **不合格**（Jazz3→1/2、Rock1→約2倍、BN1-147→1/2） |
+| Beat F-measure mean | 0.469 | ≥ 0.80 | **不合格**（テンポ正解 4 トラック中 03_BN1 は拍ラベル誤りで 0.000） |
+
+**M4a ゲート: 不合格。** dev でのチューニング（候補生成・選択規則・位相決定の
+構成要素別実測を反復）では dev Acc2 9/10・beatF 0.55 が上限で、holdout でも同傾向。
+
+### 誤り構造の分析（M4b への申し送り）
+
+1. **テンポオクターブは onset 列から原理的に決まらないケースが多い**: 8 分主体の
+   演奏では半テンポ格子も完全適合し、チャンス補正付き適合度は疎な格子を系統的に
+   優遇する（逆に補正を弱めると 2 倍テンポが常勝）。単一スカラー補正では
+   dev 内でも両立不能なトラック対が存在することを実測で確認
+   （例: Funk2 は強い補正が必要、BN2 は弱い補正が必要）。
+2. **拍位相（拍ラベル）は 16 分格子の 1/4 拍シフト不変性のため、ノートからは
+   mod P/4 でしか決まらない**。拍ラベルはアクセント情報が必要だが、
+   シンコペーション（ボサノバ・ロックの先行アタック）ではオンセット包絡・
+   librosa DP 拍・ノート出現率のすべてが裏拍側を指すトラックがある
+   （GT テンポ固定でも位相正解は最良基準で 8/10 が上限だった）。
+3. 帰結: **候補 B（Beat This!、学習済みビートトラッカー）の実測比較が M4b の
+   最優先事項**。アクセント・拍レベルの判断は学習モデルに寄せ、本実装の
+   格子適合+回帰ポリッシュは「tick 精度の微調整」に役割を限定するのが有望。
+   量子化スナップ・rhythm.json・メトリクス・ベンチはそのまま流用できる。
+4. 収穫: 回帰ポリッシュによりテンポ正解時の精度は十分（beatF 0.97〜0.99、
+   合成 GPA 1.0）。E2E でも劣化しない。失敗は「レベルとラベルの選択」に集中している。
+
+再現コマンド:
+
+```
+uv run python -m guitartab eval --rhythm --eval-data eval_data/guitarset
+uv run python -m guitartab eval --rhythm --eval-data eval_data/rhythm_synth/clean
+uv run python -m guitartab eval --rhythm --eval-data eval_data/rhythm_synth/clean --engine basicpitch  # E2E
+python eval_data/rhythm_synth/make_rhythm_synth.py  # ベンチ再生成
+```

@@ -79,6 +79,38 @@ def load_jams_note_midi(path: Path) -> list[NoteEvent]:
     return sort_notes(notes)
 
 
+def load_jams_tempo(path: Path) -> float:
+    """JAMS の tempo アノテーション（GuitarSet: 全曲グローバル 1 値）を読む。"""
+    data = json.loads(Path(path).read_text())
+    for ann in data.get("annotations", []):
+        if ann.get("namespace") == "tempo":
+            observations = ann.get("data", [])
+            if observations:
+                return float(observations[0]["value"])
+    raise ValueError(f"no 'tempo' annotation found in {path}")
+
+
+def load_jams_beats(path: Path) -> list[dict]:
+    """JAMS の beat_position アノテーションを読む。
+
+    返り値: [{"time_sec": float, "measure": int, "position": int}, ...]（時刻順）。
+    """
+    data = json.loads(Path(path).read_text())
+    for ann in data.get("annotations", []):
+        if ann.get("namespace") == "beat_position":
+            beats = [
+                {
+                    "time_sec": float(obs["time"]),
+                    "measure": int(obs["value"]["measure"]),
+                    "position": int(obs["value"]["position"]),
+                }
+                for obs in ann.get("data", [])
+            ]
+            if beats:
+                return sorted(beats, key=lambda b: b["time_sec"])
+    raise ValueError(f"no 'beat_position' annotation found in {path}")
+
+
 def load_ground_truth(path: Path) -> list[NoteEvent]:
     """GT ファイルを拡張子と中身から判別して NoteEvent リストとして読む。"""
     path = Path(path)

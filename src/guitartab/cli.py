@@ -1,11 +1,13 @@
-"""guitartab CLI — transcribe / separate / tab / eval サブコマンド。
+"""guitartab CLI — transcribe / separate / tab / quantize / eval サブコマンド。
 
     python -m guitartab transcribe --url <YouTube URL>
     python -m guitartab separate   --url <YouTube URL> | --input <audio>
     python -m guitartab tab        <notes.json> [--out-dir DIR]
-    python -m guitartab midi       <notes.json> [--out FILE]
-    python -m guitartab musicxml   <tab.json> [--out FILE]
+    python -m guitartab quantize   <notes.json> [--audio FILE] [--out FILE]
+    python -m guitartab midi       <notes.json> [--rhythm rhythm.json] [--out FILE]
+    python -m guitartab musicxml   <tab.json> [--rhythm rhythm.json] [--out FILE]
     python -m guitartab eval       [--eval-data eval_data] [--engine basicpitch]
+    python -m guitartab eval --rhythm [--eval-data eval_data/guitarset]
 """
 
 from __future__ import annotations
@@ -20,12 +22,14 @@ from guitartab.pipeline import (
     DEFAULT_WORK_ROOT,
     MIDI_FILENAME,
     MUSICXML_FILENAME,
+    RHYTHM_FILENAME,
     TAB_FILENAME,
     TAB_TEXT_FILENAME,
     run_transcribe_pipeline,
     stage_download,
     stage_midi,
     stage_musicxml,
+    stage_quantize,
     stage_separate,
     stage_tab,
 )
@@ -160,6 +164,7 @@ def cmd_transcribe(args: argparse.Namespace) -> int:
         engine,
         work_root=args.work,
         separate=not args.no_separate,
+        quantize=not args.no_quantize,
         force=args.force,
     )
     print(notes_path)
@@ -207,6 +212,24 @@ def cmd_tab(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_quantize(args: argparse.Namespace) -> int:
+    notes_path = args.notes
+    if not notes_path.exists():
+        raise SystemExit(f"notes.json not found: {notes_path}")
+    out_path = args.out if args.out is not None else notes_path.parent / RHYTHM_FILENAME
+    if "eval_data" in out_path.resolve().parts:
+        raise SystemExit(
+            "output path is inside eval_data/ (frozen GT area); "
+            "use --out to write elsewhere"
+        )
+    audio_path = args.audio
+    if audio_path is not None and not audio_path.exists():
+        raise SystemExit(f"audio not found: {audio_path}")
+    stage_quantize(notes_path, out_path, audio_path=audio_path, force=args.force)
+    print(out_path)
+    return 0
+
+
 def cmd_midi(args: argparse.Namespace) -> int:
     notes_path = args.notes
     if not notes_path.exists():
@@ -217,7 +240,13 @@ def cmd_midi(args: argparse.Namespace) -> int:
             "output path is inside eval_data/ (frozen GT area); "
             "use --out to write elsewhere"
         )
-    stage_midi(notes_path, midi_path, tempo_bpm=args.tempo, force=args.force)
+    stage_midi(
+        notes_path,
+        midi_path,
+        tempo_bpm=args.tempo,
+        rhythm_path=args.rhythm,
+        force=args.force,
+    )
     print(midi_path)
     return 0
 
@@ -232,12 +261,14 @@ def cmd_musicxml(args: argparse.Namespace) -> int:
             "output path is inside eval_data/ (frozen GT area); "
             "use --out to write elsewhere"
         )
-    stage_musicxml(tab_path, out_path, force=args.force)
+    stage_musicxml(tab_path, out_path, rhythm_path=args.rhythm, force=args.force)
     print(out_path)
     return 0
 
 
 def cmd_eval(args: argparse.Namespace) -> int:
+    if args.rhythm:
+        return _cmd_eval_rhythm(args)
     items = discover_items(args.eval_data)
     if not items:
         print(
@@ -259,6 +290,36 @@ def cmd_eval(args: argparse.Namespace) -> int:
     return 1 if had_errors else 0
 
 
+def _cmd_eval_rhythm(args: argparse.Namespace) -> int:
+    """リズム量子化ベンチ（M4）。engine 指定時は合成ベンチを E2E モードで評価。"""
+    from guitartab.eval.rhythm_benchmark import (
+        discover_rhythm_items,
+        format_rhythm_table,
+        run_rhythm_benchmark,
+    )
+    from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+
+    items = discover_rhythm_items(args.eval_data)
+    if not items:
+        print(
+            f"no rhythm benchmark items found under {args.eval_data} "
+            "(expected GuitarSet layout or rhythm_synth clips)",
+            file=sys.stderr,
+        )
+        return 1
+    engine = None
+    if args.engine:
+        engine = build_engine(args.engine[0], args)
+    result = run_rhythm_benchmark(
+        LibrosaConstantTempoEstimator(),
+        items,
+        use_audio=not args.rhythm_no_audio,
+        engine=engine,
+    )
+    print(format_rhythm_table(result))
+    return 1 if result.errors else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="guitartab",
@@ -274,6 +335,11 @@ def main(argv: list[str] | None = None) -> int:
         "--no-separate",
         action="store_true",
         help="Demucs 分離をスキップして source.wav を直接転写する",
+    )
+    p_tr.add_argument(
+        "--no-quantize",
+        action="store_true",
+        help="quantize（テンポ推定+格子スナップ）をスキップして固定 120BPM 近似で出力する",
     )
     p_tr.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     _add_common_engine_args(p_tr)
@@ -308,6 +374,26 @@ def main(argv: list[str] | None = None) -> int:
     p_tab.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     p_tab.set_defaults(func=cmd_tab)
 
+    p_q = sub.add_parser(
+        "quantize",
+        help="notes.json → テンポ推定+格子スナップ (rhythm.json、M4a)",
+    )
+    p_q.add_argument("notes", type=Path, help="入力 notes.json")
+    p_q.add_argument(
+        "--audio",
+        type=Path,
+        default=None,
+        help="拍推定に使う音声（ギターステム等。省略時はノート onset のみで推定）",
+    )
+    p_q.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help=f"出力パス (default: notes.json と同じディレクトリの {RHYTHM_FILENAME})",
+    )
+    p_q.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
+    p_q.set_defaults(func=cmd_quantize)
+
     p_mid = sub.add_parser("midi", help="notes.json → MIDI (output.mid)")
     p_mid.add_argument("notes", type=Path, help="入力 notes.json")
     p_mid.add_argument(
@@ -323,6 +409,13 @@ def main(argv: list[str] | None = None) -> int:
         metavar="BPM",
         help="固定テンポ (default: %(default)s BPM。量子化は行わない)",
     )
+    p_mid.add_argument(
+        "--rhythm",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="rhythm.json を使って実テンポ・量子化 tick でレンダリングする",
+    )
     p_mid.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     p_mid.set_defaults(func=cmd_midi)
 
@@ -336,6 +429,13 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help=f"出力 MusicXML パス (default: tab.json と同じディレクトリの {MUSICXML_FILENAME})",
+    )
+    p_mxl.add_argument(
+        "--rhythm",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="rhythm.json を使って実テンポ・量子化 tick でレンダリングする",
     )
     p_mxl.add_argument("--force", action="store_true", help="キャッシュを無視して再実行")
     p_mxl.set_defaults(func=cmd_musicxml)
@@ -362,12 +462,24 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="推定 notes.json を残すディレクトリ（eval_data 配下は指定禁止）",
     )
+    p_ev.add_argument(
+        "--rhythm",
+        action="store_true",
+        help="リズム量子化ベンチ（M4）を実行する。GT ノート onset + 音声で"
+        "テンポ・拍を評価（合成ベンチでは GPA も）。--engine 指定時は"
+        "合成ベンチをフル転写経由（E2E）で評価する",
+    )
+    p_ev.add_argument(
+        "--rhythm-no-audio",
+        action="store_true",
+        help="--rhythm で音声を使わずノート onset のみで推定する（フォールバック経路の評価）",
+    )
     _add_common_engine_args(p_ev)
     p_ev.set_defaults(func=cmd_eval)
 
     args = parser.parse_args(argv)
     if args.command == "eval":
-        if args.engine is None:
+        if args.engine is None and not args.rhythm:
             args.engine = ["basicpitch"]
         if args.out is not None:
             out_r, ev_r = args.out.resolve(), args.eval_data.resolve()

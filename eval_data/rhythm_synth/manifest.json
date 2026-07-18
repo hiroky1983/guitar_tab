@@ -1,0 +1,100 @@
+{
+ "source": "eval_data/guitarset (dev 10 tracks only; holdout NOT used)",
+ "design": "docs/DESIGN_M4_QUANTIZATION.md §4.3",
+ "generator": "make_rhythm_synth.py (this directory)",
+ "renderer": {
+  "method": "karplus_strong",
+  "note": "fluidsynth 未導入環境のための設計書記載の代替合成",
+  "sample_rate": 22050,
+  "decay": 0.996,
+  "note_gain": 0.5,
+  "fade_sec": 0.01,
+  "peak_dbfs": -1.0
+ },
+ "grid": {
+  "divisions_per_quarter": 12,
+  "allowed_tick_residues": [
+   0,
+   3,
+   4,
+   6,
+   8,
+   9
+  ],
+  "phase": "beat1 = t0 (GuitarSet beat GT準拠)"
+ },
+ "variants": {
+  "clean": {
+   "tempo_factor": 1.0,
+   "jitter_sigma_ms": 0.0
+  },
+  "slow08": {
+   "tempo_factor": 0.8,
+   "jitter_sigma_ms": 0.0
+  },
+  "fast125": {
+   "tempo_factor": 1.25,
+   "jitter_sigma_ms": 0.0
+  },
+  "jitter10": {
+   "tempo_factor": 1.0,
+   "jitter_sigma_ms": 10.0
+  },
+  "jitter20": {
+   "tempo_factor": 1.0,
+   "jitter_sigma_ms": 20.0
+  }
+ },
+ "tracks": [
+  {
+   "track_id": "00_BN3-119-G_solo",
+   "gt_tempo_bpm": 119.0,
+   "n_notes": 79
+  },
+  {
+   "track_id": "00_Rock2-85-F_solo",
+   "gt_tempo_bpm": 85.0,
+   "n_notes": 137
+  },
+  {
+   "track_id": "01_Funk1-97-C_solo",
+   "gt_tempo_bpm": 97.0,
+   "n_notes": 104
+  },
+  {
+   "track_id": "02_Jazz2-110-Bb_solo",
+   "gt_tempo_bpm": 110.0,
+   "n_notes": 54
+  },
+  {
+   "track_id": "02_SS1-68-E_solo",
+   "gt_tempo_bpm": 68.0,
+   "n_notes": 70
+  },
+  {
+   "track_id": "03_Jazz1-200-B_solo",
+   "gt_tempo_bpm": 200.0,
+   "n_notes": 43
+  },
+  {
+   "track_id": "04_Funk2-119-G_solo",
+   "gt_tempo_bpm": 119.0,
+   "n_notes": 124
+  },
+  {
+   "track_id": "04_Rock3-148-C_solo",
+   "gt_tempo_bpm": 148.0,
+   "n_notes": 71
+  },
+  {
+   "track_id": "05_BN2-166-Ab_solo",
+   "gt_tempo_bpm": 166.0,
+   "n_notes": 67
+  },
+  {
+   "track_id": "05_SS2-107-Ab_solo",
+   "gt_tempo_bpm": 107.0,
+   "n_notes": 87
+  }
+ ]
+}

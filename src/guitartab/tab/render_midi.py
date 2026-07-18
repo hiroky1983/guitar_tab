@@ -4,8 +4,13 @@ NoteEvent 列（notes.json）または TabNote 列（tab.json）を標準 MIDI �
 書き出す。耳で検証するための第二出力（docs/DESIGN.md「出力」参照）。
 イベント数が少ないため外部ライブラリは使わず stdlib のみで SMF を組み立てる。
 
-- テンポは固定（デフォルト 120 BPM）。絶対秒 → tick の変換のみ行い、
-  リズム量子化・小節割りは M4 スコープでここでは行わない。
+- テンポの 2 モード:
+  - **rhythm.json 供給時（M4a）**: 推定テンポを tempo meta に使い、各音符は
+    量子化済み tick（quarter=12 → ticks_per_beat へ換算）に置く。MIDI の
+    拍格子と実際の拍が一致するので、量子化が合っているかを耳で検証できる。
+    onset_sec で照合できない音符は物理時刻のまま置く。
+  - **未供給時（従来動作）**: テンポ固定（デフォルト 120 BPM）で
+    絶対秒 → tick の変換のみ行う（量子化しない）。
 - velocity: NoteEvent.velocity (0.0-1.0) を 1-127 に写像する。
   0 以下・情報なし（TabNote）は 100 とする。
 - 同時発音は同一 tick の note on として並ぶ。同一 tick では note off を
@@ -18,6 +23,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Sequence, Union
 
+from guitartab.rhythm.schema import Rhythm, lookup_note_by_onset
 from guitartab.tab.fingering import TabNote
 from guitartab.transcribe.base import NoteEvent
 
@@ -66,8 +72,15 @@ def render_midi(
     *,
     tempo_bpm: float = DEFAULT_TEMPO_BPM,
     ticks_per_beat: int = DEFAULT_TICKS_PER_BEAT,
+    rhythm: Rhythm | None = None,
 ) -> bytes:
-    """NoteEvent / TabNote 列を SMF format 0 のバイト列にする。"""
+    """NoteEvent / TabNote 列を SMF format 0 のバイト列にする。
+
+    rhythm を渡すと tempo_bpm は無視され、rhythm の推定テンポと量子化済み
+    tick を使う（モジュール docstring 参照）。
+    """
+    if rhythm is not None:
+        tempo_bpm = rhythm.tempo_bpm
     if tempo_bpm <= 0:
         raise ValueError(f"tempo_bpm must be positive: {tempo_bpm}")
     if not 1 <= ticks_per_beat <= 0x7FFF:
@@ -84,8 +97,19 @@ def render_midi(
             raise ValueError(f"midi_pitch out of MIDI range [0, 127]: {pitch}")
         if onset_sec < 0:
             raise ValueError(f"onset_sec must be non-negative: {onset_sec}")
-        on_tick = round(onset_sec * ticks_per_sec)
-        off_tick = max(on_tick + 1, round(offset_sec * ticks_per_sec))
+        matched = (
+            lookup_note_by_onset(rhythm, onset_sec) if rhythm is not None else None
+        )
+        if matched is not None:
+            midi_ticks_per_div = ticks_per_beat / rhythm.divisions_per_quarter
+            on_tick = round(matched.onset_tick * midi_ticks_per_div)
+            off_tick = max(
+                on_tick + 1,
+                round((matched.onset_tick + matched.duration_ticks) * midi_ticks_per_div),
+            )
+        else:
+            on_tick = round(onset_sec * ticks_per_sec)
+            off_tick = max(on_tick + 1, round(offset_sec * ticks_per_sec))
         events.append((on_tick, 1, pitch, velocity, bytes([0x90 | _CHANNEL, pitch, velocity])))
         events.append((off_tick, 0, pitch, velocity, bytes([0x80 | _CHANNEL, pitch, 0])))
     events.sort(key=lambda e: e[:4])
@@ -114,11 +138,16 @@ def save_midi(
     *,
     tempo_bpm: float = DEFAULT_TEMPO_BPM,
     ticks_per_beat: int = DEFAULT_TICKS_PER_BEAT,
+    rhythm: Rhythm | None = None,
 ) -> Path:
     """render_midi() の結果をファイルに書き出す。"""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(render_midi(notes, tempo_bpm=tempo_bpm, ticks_per_beat=ticks_per_beat))
+    path.write_bytes(
+        render_midi(
+            notes, tempo_bpm=tempo_bpm, ticks_per_beat=ticks_per_beat, rhythm=rhythm
+        )
+    )
     return path
 
 
