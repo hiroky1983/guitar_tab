@@ -9,6 +9,7 @@ notes.json（物理時刻の音符列）+ 任意の音声から、一定テン�
 - schema:   rhythm.json の入出力
 """
 
+from guitartab.rhythm.beatthis import BeatThisTempoEstimator
 from guitartab.rhythm.estimate import (
     LibrosaConstantTempoEstimator,
     TempoEstimate,
@@ -27,6 +28,7 @@ from guitartab.rhythm.schema import (
 
 __all__ = [
     "ALLOWED_TICK_RESIDUES",
+    "BeatThisTempoEstimator",
     "DIVISIONS_PER_QUARTER",
     "LibrosaConstantTempoEstimator",
     "Rhythm",

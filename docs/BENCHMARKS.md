@@ -648,3 +648,122 @@ uv run python -m guitartab eval --rhythm --eval-data eval_data/rhythm_synth/clea
 uv run python -m guitartab eval --rhythm --eval-data eval_data/rhythm_synth/clean --engine basicpitch  # E2E
 python eval_data/rhythm_synth/make_rhythm_synth.py  # ベンチ再生成
 ```
+
+---
+
+## 2026-07-18: M4b 入口 — Beat This! 比較（候補 B、dev のみ・holdout 温存）
+
+M4a 申し送り 3（「候補 B の実測比較が最優先」）の実施。Beat This!（CPJKU、ISMIR 2024、
+MIT）を TempoEstimator として統合し、M4a の librosa 候補 A と同一ベンチ・同一メトリクスで
+比較した。**判定: dev で librosa 版を明確に上回らなかったため holdout は未実施（温存）**。
+
+### セットアップ（実測）
+
+| 項目 | 値 |
+|---|---|
+| venv | 専用 `.venv-beatthis`（uv、CPython 3.11.3）。beat-this 1.1.0 + torch 2.13.0 + mir_eval + soundfile |
+| 導入時の注意 | (1) `beat_this.model.pl_module` が mir_eval を hard import するため mir_eval が必須。(2) torchaudio 2.11 の torchcodec 必須化で `torchaudio.load` が落ちるが、beat_this は soundfile フォールバックを内蔵しており **soundfile の追加で解消**（torchcodec 不要） |
+| チェックポイント | final0（77.3MB）。JKU クラウド（cloud.cp.jku.at、直接 HTTPS）から torch.hub キャッシュへ。curl 実測 82 秒。Google Drive 経由なし |
+| 統合 | `src/guitartab/rhythm/beatthis.py` + `_beatthis_runner.py`（他エンジンと同じ別 venv サブプロセス方式。venv 解決: 引数 > GUITARTAB_BEATTHIS_PYTHON > `.venv-beatthis/bin/python`）。`eval --rhythm --rhythm-estimator beatthis` で選択 |
+| デバイス・速度 | CPU / MPS とも動作。30 秒クリップのサブプロセス合計（モデルロード込み）: **CPU 1.8s / MPS 1.9s**（プロセス内推論のみは CPU 1.3s / MPS 3.4s）。86 秒実曲ミックスで 2.2s。**MPS に速度メリットなし → CPU をデフォルト** |
+
+### 統合方式（拍列 → 一定テンポ + 位相）
+
+素の最小二乗フィットは不成立を実測: Beat This! の生の拍列には冒頭スプリアス・欠落があり
+（Rock2: raw 拍列の beatF 0.757 → 素 LS フィット後 0.372。テンポ 0.24% 誤差の 30 秒
+ドリフトで ±70ms を割る）。採用構成は M4a 申し送りどおり役割分担:
+**テンポレベル = Beat This! 拍列の median IOI** / **精密テンポ + 位相 mod P/4 =
+M4a の格子適合走査+回帰ポリッシュ（レベル固定 ±8%）** / **拍ラベル k∈{0..3} =
+Beat This! 拍列の circular mean 位相のスナップ**（librosa DP 拍の差し替え）。
+他に 4 変種（top-k ポリッシュ再評価 / 拍列ロバスト LS / ロバスト LS+ポリッシュ /
+circular mean 位相直接使用）を dev で実測したが、いずれも採用構成を上回らなかった
+（beatF 0.403〜0.507）。ヒューリスティック積層を避けるためここで打ち切り。
+
+### dev 10 トラック比較（GT ノート onset + ギターステム音声入力、各 1 回実測）
+
+| 指標 | librosa 候補 A（M4a 再掲） | Beat This!（採用構成） |
+|---|---:|---:|
+| TempoAcc1 | 5/10 | **6/10** |
+| TempoAcc2 | 9/10 | **10/10** |
+| Beat F-measure mean | **0.548** | 0.527 |
+| Beat CMLt / AMLt mean | 0.389 / 0.700 | 0.385 / 0.669 |
+
+Beat This! のトラック別（refBPM → estBPM、A1A2、beatF）:
+
+| track | est | A1 | A2 | beatF |
+|---|---:|:-:|:-:|---:|
+| 00_BN3-119-G | 59.5 | x | o | 0.000 |
+| 00_Rock2-85-F | 85.0 | o | o | 0.982 |
+| 01_Funk1-97-C | 97.1 | o | o | 0.987 |
+| 02_Jazz2-110-Bb | 54.9 | x | o | 0.659 |
+| 02_SS1-68-E | 66.7 | o | o | 0.048 |
+| 03_Jazz1-200-B | 96.4 | x | o | 0.250 |
+| 04_Funk2-119-G | 119.0 | o | o | 0.991 |
+| 04_Rock3-148-C | 145.8 | o | o | 0.442 |
+| 05_BN2-166-Ab | 83.0 | x | o | 0.658 |
+| 05_SS2-107-Ab | 105.4 | o | o | 0.252 |
+
+観察（実測に基づく）:
+
+- **レベル正解トラックでは beatF 0.98〜0.99**（Rock2/Funk1/Funk2）と librosa 版の
+  同種ケースと同水準以上。テンポ族は 10/10 で正しい（librosa 版は SS1 で 2 倍・
+  Jazz1 で族外の誤りがあった）。
+- 誤りは (a) ボサノバ・ジャズ系の**半テンポ選択** 4/10（BN3/Jazz2/Jazz1/BN2。
+  Acc2 は正解 = メトリカルレベルの取り違えで、フルミックス学習のドメイン外である
+  ギター単体入力での既知リスクどおり）、(b) SS 系（フィンガースタイル）で
+  **拍追跡自体が崩壊**（SS2: raw beatF 0.075）、(c) BN3 は半テンポかつ裏拍位相で
+  beatF 0.000。
+- Rock3（145.8 vs GT 148）はレベル正解だがノート格子適合の精密化が 1.5% ずれる
+  （演奏の系統的逸脱。librosa 版と同根の限界で、Beat This! 起因ではない）。
+
+### 合成リズムベンチ GPA 比較（10 クリップ mean、単独評価モード）
+
+| 変種 | librosa A1 / A2 / GPA（M4a 再掲） | Beat This! A1 / A2 / GPA |
+|---|---|---|
+| clean | 6/10 / 10/10 / **0.403** | 5/10 / 5/10 / 0.304 |
+| slow08 | 8/10 / 10/10 / **0.502** | 4/10 / 6/10 / 0.202 |
+| fast125 | 5/10 / 9/10 / 0.202 | 4/10 / 8/10 / 0.206 |
+| jitter10 | 7/10 / 9/10 / **0.397** | 5/10 / 5/10 / 0.101 |
+| jitter20 | 6/10 / 9/10 / **0.286** | 7/10 / 7/10 / 0.187 |
+
+- **合成ベンチでは Beat This! が明確に劣る**。Karplus-Strong 合成音はさらに
+  ドメイン外で、テンポレベルが**非オクターブ関係**（clean SS1: 90.7 vs GT 68、
+  Funk2: 158.7 vs 119 = 4/3 等）に飛び、Acc2 まで崩れる（実データでは 10/10）。
+  レベル固定 ±8% の統合方式は、レベル自体が誤ると回復手段がない。
+- テンポ・位相が完全でも拍ラベルの定数 tick シフトで GPA が 0 になるケースは
+  librosa 版と同じ（clean Rock2: est 85.0、変位 0 だが GPA 0.000）。
+
+### 実曲スモーク（参考、GT なし・各 1 回実測）
+
+B'z「ギリギリchop」（86.2 秒、work/wr7xTGTG-Mo）で入力ソース比較:
+
+| 入力 | 拍数 / downbeat 数 | median IOI | IOI 標準偏差 |
+|---|---|---|---|
+| 原曲ミックス source.wav | 327 / 93 | 0.260s（≒231 BPM レベル） | **0.032s（一貫した追跡）** |
+| ギターステム stems/guitar.wav | 147 / 66 | 0.400s | 0.659s（崩壊気味） |
+
+フルミックスでは安定に追跡し、ギターステムでは崩れる —— 学習ドメインどおりの挙動で、
+**M4b の「ミックス入力 vs ステム入力」実測比較（人手拍ラベル付き）で Beat This! を
+再評価する価値がある**ことを示す。
+
+### 判定と M4b への推奨（実測に基づく）
+
+1. **holdout 未実施（温存）**: dev で librosa 版を明確に上回らなかった
+   （テンポ Acc1/Acc2 は +1/+1 だが beatF −0.021、合成 GPA は全変種で同等以下）。
+   M4a ゲート基準の holdout 判定は行っていない。
+2. **ギター単体音声への Beat This! 単独差し替えは不採用**。強み（レベル正解時の
+   拍精度、テンポ族の正確さ）と弱み（ボサ/ジャズの半テンポ、SS 系の崩壊、合成音の
+   非オクターブ誤り）が librosa 版と相補的だが、dev 実測では選択規則を立てる
+   識別シグナルが見つからなかった（変種 4 種で確認）。
+3. **M4b 本実装への推奨**: Beat This! の再評価は実曲（フルミックス入力 + 人手拍
+   ラベル）で行うのが本命（上記スモークの挙動 + 設計 §2.2 のミックス比較計画）。
+   GuitarSet 系ベンチのゲート突破には、テンポレベル・拍位相の曖昧性解消に
+   ノート列とは独立な手がかり（例: ミックスのドラム帯域）が必要というのが
+   M4a から通算した実測の示唆。
+
+再現コマンド:
+
+```
+uv run python -m guitartab eval --rhythm --rhythm-estimator beatthis --eval-data eval_data/guitarset
+uv run python -m guitartab eval --rhythm --rhythm-estimator beatthis --eval-data eval_data/rhythm_synth/clean
+```

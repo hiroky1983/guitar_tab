@@ -297,7 +297,14 @@ def _cmd_eval_rhythm(args: argparse.Namespace) -> int:
         format_rhythm_table,
         run_rhythm_benchmark,
     )
-    from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+    if args.rhythm_estimator == "beatthis":
+        from guitartab.rhythm.beatthis import BeatThisTempoEstimator
+
+        estimator = BeatThisTempoEstimator()
+    else:
+        from guitartab.rhythm.estimate import LibrosaConstantTempoEstimator
+
+        estimator = LibrosaConstantTempoEstimator()
 
     items = discover_rhythm_items(args.eval_data)
     if not items:
@@ -311,7 +318,7 @@ def _cmd_eval_rhythm(args: argparse.Namespace) -> int:
     if args.engine:
         engine = build_engine(args.engine[0], args)
     result = run_rhythm_benchmark(
-        LibrosaConstantTempoEstimator(),
+        estimator,
         items,
         use_audio=not args.rhythm_no_audio,
         engine=engine,
@@ -468,6 +475,13 @@ def main(argv: list[str] | None = None) -> int:
         help="リズム量子化ベンチ（M4）を実行する。GT ノート onset + 音声で"
         "テンポ・拍を評価（合成ベンチでは GPA も）。--engine 指定時は"
         "合成ベンチをフル転写経由（E2E）で評価する",
+    )
+    p_ev.add_argument(
+        "--rhythm-estimator",
+        choices=["librosa", "beatthis"],
+        default="librosa",
+        help="--rhythm のテンポ推定器（librosa = M4a 候補 A / beatthis = M4b 候補 B。"
+        "beatthis は専用 venv .venv-beatthis が必要）",
     )
     p_ev.add_argument(
         "--rhythm-no-audio",

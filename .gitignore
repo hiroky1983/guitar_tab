@@ -4,6 +4,7 @@ _archive/
 .venv/
 .venv-basicpitch/
 .venv-yourmt3/
+.venv-beatthis/
 third_party/
 work/
 .pytest_cache/
